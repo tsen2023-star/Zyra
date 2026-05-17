@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "Zyra Music",
+    "slug": "zyra-music",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#05050f"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.bablu06.zyramusic"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "2c500629-36a6-4a2a-89e6-0299829eac71"
+      }
+    }
+  }
+}
