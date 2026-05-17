@@ -45,11 +45,19 @@ SEARCH_OPTS = {
 }
 
 REFRESH_OPTS = {
-    'format': 'bestaudio/best',
+    # Use Android client — bypasses YouTube's datacenter IP restrictions
+    'format': 'bestaudio[ext=m4a]/bestaudio/best',
     'noplaylist': True,
     'quiet': True,
     'skip_download': True,
     'no_warnings': True,
+    'no_check_certificate': True,
+    'extractor_args': {
+        'youtube': {
+            'player_client': ['android'],
+            'player_skip': ['webpage', 'configs'],
+        }
+    },
 }
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
