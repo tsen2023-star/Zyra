@@ -125,6 +125,38 @@ def random_song():
         return jsonify({"success": False, "error": str(e)})
 
 
+import urllib.request
+import json
+
+INVIDIOUS_INSTANCES = [
+    "https://vid.puffyan.us",
+    "https://inv.tux.pizza",
+    "https://invidious.asir.dev",
+    "https://inv.nadeko.net"
+]
+
+def get_stream_url_from_proxy(video_id):
+    for instance in INVIDIOUS_INSTANCES:
+        try:
+            req = urllib.request.Request(
+                f"{instance}/api/v1/videos/{video_id}",
+                headers={"User-Agent": "Mozilla/5.0"}
+            )
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = json.loads(response.read().decode())
+                
+                # Look for adaptiveFormats (contains audio-only streams)
+                formats = data.get('adaptiveFormats', []) + data.get('formatStreams', [])
+                audio_streams = [f for f in formats if f.get('type', '').startswith('audio')]
+                
+                if audio_streams:
+                    # Sort by bitrate descending
+                    audio_streams.sort(key=lambda x: int(x.get('bitrate', 0)), reverse=True)
+                    return audio_streams[0]['url']
+        except Exception:
+            continue
+    return None
+
 @app.route('/api/refresh', methods=['GET'])
 def refresh_url():
     video_id = request.args.get('id', '').strip()
@@ -135,15 +167,23 @@ def refresh_url():
     if cached:
         return jsonify({"success": True, "data": {"url": cached}})
 
-    try:
-        with yt_dlp.YoutubeDL(REFRESH_OPTS) as ydl:
-            entry = ydl.extract_info(video_id, download=False)
-            url = entry.get('url')
-            if url:
-                set_cached_url(video_id, url)
-            return jsonify({"success": True, "data": {"url": url}})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
+    # First try using Invidious API to bypass IP blocks
+    url = get_stream_url_from_proxy(video_id)
+    
+    # Fallback to yt-dlp if proxy fails
+    if not url:
+        try:
+            with yt_dlp.YoutubeDL(REFRESH_OPTS) as ydl:
+                entry = ydl.extract_info(video_id, download=False)
+                url = entry.get('url')
+        except Exception as e:
+            return jsonify({"success": False, "error": f"Failed to resolve stream: {str(e)}"})
+
+    if url:
+        set_cached_url(video_id, url)
+        return jsonify({"success": True, "data": {"url": url}})
+    else:
+        return jsonify({"success": False, "error": "No audio stream found"})
 
 
 # ─── Entry point ─────────────────────────────────────────────────────────────
