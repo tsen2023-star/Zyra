@@ -30,7 +30,7 @@ JWT_EXPIRY_DAYS = 30
 
 # ─── MongoDB ──────────────────────────────────────────────────────────────────
 
-mongo  = MongoClient(MONGO_URI)
+mongo  = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
 db     = mongo['zyra']
 users  = db['users']
 
@@ -207,6 +207,16 @@ def jiosaavn_get_audio_url(song_id: str) -> str:
     except Exception as e:
         print(f'JioSaavn URL fetch error: {e}')
         return ''
+
+@app.route('/api/test-db', methods=['GET'])
+def test_db():
+    """Diagnostic route — tests MongoDB connectivity."""
+    try:
+        mongo.admin.command('ping')
+        count = users.count_documents({})
+        return jsonify({'success': True, 'message': 'MongoDB connected!', 'user_count': count})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # ─── Auth Routes ──────────────────────────────────────────────────────────────
 
