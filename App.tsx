@@ -103,13 +103,17 @@ export default function App() {
   useEffect(() => {
     let subscription: any;
     if (shakeEnabled) {
-      Accelerometer.setUpdateInterval(500);
+      Accelerometer.setUpdateInterval(300);
       let lastShakeTime = 0;
       subscription = Accelerometer.addListener(({ x, y, z }) => {
         const acc = Math.sqrt(x*x + y*y + z*z);
-        if (acc > 2.5) {
+        if (acc > 1.8) {
           const now = Date.now();
-          if (now - lastShakeTime > 1500) { lastShakeTime = now; if (playNextRef.current) playNextRef.current(); }
+          if (now - lastShakeTime > 1000) {
+            lastShakeTime = now;
+            // Always read .current so we get the latest playNext closure
+            if (playNextRef.current) playNextRef.current();
+          }
         }
       });
     }
@@ -333,6 +337,14 @@ export default function App() {
         // ─ Tier 0: offline download ─
         const res = await Audio.Sound.createAsync({ uri: downloadedTrack.localUri }, { shouldPlay: true });
         newSound = res.sound;
+      } else if (track.id?.startsWith('yt_')) {
+        // ─ Tier YouTube: song came from YouTube search — stream directly via /api/stream with yt_ id ─
+        const titleEnc  = encodeURIComponent(track.title  || '');
+        const artistEnc = encodeURIComponent(track.artist || '');
+        const streamUrl = `${BACKEND_URL}/api/stream?id=${track.id}&title=${titleEnc}&artist=${artistEnc}`;
+        const res = await Audio.Sound.createAsync({ uri: streamUrl }, { shouldPlay: true });
+        newSound = res.sound;
+        usedYoutube = true;
       } else {
         // ─ Tier 1: JioSaavn stream (title+artist passed so backend can auto-fallback) ─
         const titleEnc  = encodeURIComponent(track.title  || '');
@@ -387,7 +399,8 @@ export default function App() {
         if (status.isLoaded) {
           setPosition(status.positionMillis);
           setDuration(status.durationMillis || 0);
-          if (status.didJustFinish && playNextRef.current) playNextRef.current();
+          // Song ended naturally → play a genre-random recommendation
+          if (status.didJustFinish && autoNextRef.current) autoNextRef.current();
         }
       });
     } catch (e: any) {
@@ -479,7 +492,40 @@ export default function App() {
     await handleTrackPress(list[Math.max(0, idx - 1)]);
   };
 
-  useEffect(() => { playNextRef.current = playNext; }, [playNext]);
+  // Assign ref in render body — always fresh, no useEffect needed
+  // This guarantees shake + playback-end callbacks always call the latest version
+  playNextRef.current = playNext;
+
+  // ─── Genre-random auto-next (called when a song ENDS naturally) ──────────────
+  const handleAutoNext = async () => {
+    if (!activeTrack) return;
+    // Always use smart autoplay for genre-random pick
+    if (smartAutoplay) {
+      try {
+        setIsLoading(true);
+        const qs  = `songId=${activeTrack.id}&userId=${userId||''}&mood=${currentMood}`;
+        const res = await fetch(`${BACKEND_URL}/api/autoplay?${qs}`);
+        const json = await res.json();
+        if (json.success) {
+          setAutoplayReason(json.reason);
+          setCurrentMood(json.mood || 'default');
+          await handleTrackPress(json.song);
+          return;
+        }
+      } catch (e) { console.error('Auto-next failed', e); }
+      finally { setIsLoading(false); }
+    }
+    // Fallback: random song
+    try {
+      const res  = await fetch(`${BACKEND_URL}/api/random`);
+      const json = await res.json();
+      if (json.success && json.data?.song) { await handleTrackPress(json.data.song); }
+    } catch (e) { /* silent */ }
+  };
+
+  // Store autoNextRef separately so playback status update can call it
+  const autoNextRef = useRef<any>(null);
+  autoNextRef.current = handleAutoNext;
 
   // ─── Settings sync ───────────────────────────────────────────────────────────
   const updateSetting = async (key: string, value: boolean) => {
