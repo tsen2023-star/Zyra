@@ -262,6 +262,13 @@ def decrypt_jiosaavn_url(encrypted_url: str) -> str:
         print(f'DES decryption error: {e}')
         return ''
 
+def upgrade_image_url(url: str) -> str:
+    """Replace any WxH size pattern in a JioSaavn image URL with 500x500."""
+    if not url:
+        return url
+    # Handles: 50x50, 150x150, 100x100, 175x175, etc.
+    return re.sub(r'\d+x\d+', '500x500', url)
+
 def jiosaavn_search(query: str):
     try:
         resp = http_requests.get(
@@ -277,12 +284,13 @@ def jiosaavn_search(query: str):
             song_id = song.get('id', '')
             title   = clean_html(song.get('title', 'Unknown'))
             artist  = clean_html(song.get('more_info', {}).get('singers', song.get('description', 'Unknown')))
-            image   = song.get('image', '').replace('150x150', '500x500')
+            image   = upgrade_image_url(song.get('image', ''))
             results.append({'id': song_id, 'title': title, 'artist': artist, 'image': image, 'url': None})
         return results
     except Exception as e:
         print(f'JioSaavn search error: {e}')
         return []
+
 
 def jiosaavn_get_audio_url(song_id: str) -> str:
     cached = get_cached_url(song_id)
