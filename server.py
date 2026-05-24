@@ -9,11 +9,11 @@ Zyra Backend — Flask server with:
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 import requests as http_requests
-import random, time, os, re, html, jwt, bcrypt
+import random, time, os, re, html, jwt, hashlib
 from base64 import b64decode
 from datetime import datetime, timedelta
 from bson import ObjectId
-from pymongo import MongoClient, DESCENDING
+from pymongo import MongoClient
 from recommender import (
     detect_mood, get_query_for_mood, get_time_of_day_mood,
     build_recommendation_reason, MOOD_LABELS
@@ -60,6 +60,25 @@ def get_cached_url(track_id):
 
 def set_cached_url(track_id, url):
     url_cache[track_id] = {'ts': time.time(), 'url': url}
+
+# ─── JWT Helpers ──────────────────────────────────────────────────────────────
+
+# ─── Password Hashing (built-in hashlib — no C extensions needed) ────────────
+
+def hash_password(password: str) -> str:
+    salt = os.urandom(32)
+    key  = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100000)
+    return (salt + key).hex()
+
+def verify_password(stored_hex: str, provided: str) -> bool:
+    try:
+        stored = bytes.fromhex(stored_hex)
+        salt   = stored[:32]
+        stored_key = stored[32:]
+        key = hashlib.pbkdf2_hmac('sha256', provided.encode('utf-8'), salt, 100000)
+        return key == stored_key
+    except Exception:
+        return False
 
 # ─── JWT Helpers ──────────────────────────────────────────────────────────────
 
@@ -193,54 +212,62 @@ def jiosaavn_get_audio_url(song_id: str) -> str:
 
 @app.route('/api/auth/register', methods=['POST'])
 def register():
-    data = request.get_json() or {}
-    email    = data.get('email', '').strip().lower()
-    password = data.get('password', '').strip()
-    username = data.get('username', '').strip() or email.split('@')[0]
+    try:
+        data = request.get_json() or {}
+        email    = data.get('email', '').strip().lower()
+        password = data.get('password', '').strip()
+        username = data.get('username', '').strip() or email.split('@')[0]
 
-    if not email or not password:
-        return jsonify({'success': False, 'error': 'Email and password required'})
-    if len(password) < 6:
-        return jsonify({'success': False, 'error': 'Password must be at least 6 characters'})
-    if users.find_one({'email': email}):
-        return jsonify({'success': False, 'error': 'Email already registered'})
+        if not email or not password:
+            return jsonify({'success': False, 'error': 'Email and password required'})
+        if len(password) < 6:
+            return jsonify({'success': False, 'error': 'Password must be at least 6 characters'})
+        if users.find_one({'email': email}):
+            return jsonify({'success': False, 'error': 'Email already registered'})
 
-    hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-    result = users.insert_one({
-        'email':         email,
-        'password_hash': hashed,
-        'username':      username,
-        'created_at':    datetime.utcnow(),
-        'favorites':     [],
-        'playlists':     [],
-        'history':       [],
-        'downloads':     [],
-        'settings':      {'shake_enabled': False, 'smart_autoplay': True},
-    })
-    user_id = str(result.inserted_id)
-    token   = create_token(user_id)
-    return jsonify({'success': True, 'token': token, 'userId': user_id, 'username': username})
+        hashed = hash_password(password)
+        result = users.insert_one({
+            'email':         email,
+            'password_hash': hashed,
+            'username':      username,
+            'created_at':    datetime.utcnow(),
+            'favorites':     [],
+            'playlists':     [],
+            'history':       [],
+            'downloads':     [],
+            'settings':      {'shake_enabled': False, 'smart_autoplay': True},
+        })
+        user_id = str(result.inserted_id)
+        token   = create_token(user_id)
+        return jsonify({'success': True, 'token': token, 'userId': user_id, 'username': username})
+    except Exception as e:
+        print(f'Register error: {e}')
+        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
 
 
 @app.route('/api/auth/login', methods=['POST'])
 def login():
-    data = request.get_json() or {}
-    email    = data.get('email', '').strip().lower()
-    password = data.get('password', '').strip()
+    try:
+        data = request.get_json() or {}
+        email    = data.get('email', '').strip().lower()
+        password = data.get('password', '').strip()
 
-    if not email or not password:
-        return jsonify({'success': False, 'error': 'Email and password required'})
+        if not email or not password:
+            return jsonify({'success': False, 'error': 'Email and password required'})
 
-    user = users.find_one({'email': email})
-    if not user:
-        return jsonify({'success': False, 'error': 'Invalid email or password'})
+        user = users.find_one({'email': email})
+        if not user:
+            return jsonify({'success': False, 'error': 'Invalid email or password'})
 
-    if not bcrypt.checkpw(password.encode('utf-8'), user['password_hash']):
-        return jsonify({'success': False, 'error': 'Invalid email or password'})
+        if not verify_password(user['password_hash'], password):
+            return jsonify({'success': False, 'error': 'Invalid email or password'})
 
-    user_id = str(user['_id'])
-    token   = create_token(user_id)
-    return jsonify({'success': True, 'token': token, 'userId': user_id, 'username': user.get('username', '')})
+        user_id = str(user['_id'])
+        token   = create_token(user_id)
+        return jsonify({'success': True, 'token': token, 'userId': user_id, 'username': user.get('username', '')})
+    except Exception as e:
+        print(f'Login error: {e}')
+        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
 
 # ─── User Data Routes ─────────────────────────────────────────────────────────
 
