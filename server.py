@@ -270,6 +270,46 @@ def upgrade_image_url(url: str) -> str:
     return re.sub(r'\d+x\d+', '500x500', url)
 
 def jiosaavn_search(query: str):
+    """Search JioSaavn using the proper search.getResults API (not autocomplete).
+    Falls back to the old autocomplete API if the proper one fails."""
+    # ── Primary: proper full-text search API ──
+    try:
+        resp = http_requests.get(
+            'https://www.jiosaavn.com/api.php',
+            params={
+                '__call': 'search.getResults',
+                'p': '1',
+                'q': query,
+                'n': '20',
+                '_format': 'json',
+                '_marker': '0',
+                'ctx': 'android',
+            },
+            headers=JIOSAAVN_HEADERS, timeout=10
+        )
+        data = resp.json()
+        # search.getResults returns { results: [...], total, start }
+        songs_raw = data.get('results', [])
+        results = []
+        for song in songs_raw[:15]:
+            song_id = song.get('id', '')
+            if not song_id:
+                continue
+            title  = clean_html(song.get('title', 'Unknown'))
+            mi     = song.get('more_info', {})
+            artist = clean_html(
+                mi.get('singers', '') or
+                mi.get('primary_artists', '') or
+                song.get('description', 'Unknown')
+            )
+            image  = upgrade_image_url(song.get('image', ''))
+            results.append({'id': song_id, 'title': title, 'artist': artist, 'image': image, 'url': None, 'source': 'jiosaavn'})
+        if results:
+            return results
+    except Exception as e:
+        print(f'JioSaavn search.getResults error: {e}')
+
+    # ── Fallback: autocomplete API ──
     try:
         resp = http_requests.get(
             'https://www.jiosaavn.com/api.php',
@@ -285,10 +325,55 @@ def jiosaavn_search(query: str):
             title   = clean_html(song.get('title', 'Unknown'))
             artist  = clean_html(song.get('more_info', {}).get('singers', song.get('description', 'Unknown')))
             image   = upgrade_image_url(song.get('image', ''))
-            results.append({'id': song_id, 'title': title, 'artist': artist, 'image': image, 'url': None})
+            results.append({'id': song_id, 'title': title, 'artist': artist, 'image': image, 'url': None, 'source': 'jiosaavn'})
         return results
     except Exception as e:
-        print(f'JioSaavn search error: {e}')
+        print(f'JioSaavn autocomplete fallback error: {e}')
+        return []
+
+
+def youtube_search_songs(query: str, max_results: int = 5):
+    """Search YouTube for songs matching 'query'. Returns list of song dicts
+    with synthetic IDs (prefixed 'yt_') so the frontend knows to use
+    /api/youtube-fallback for streaming rather than /api/stream."""
+    try:
+        import yt_dlp
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'noplaylist': True,
+            'extract_flat': True,   # fast — just metadata, no URL extraction
+            'default_search': f'ytsearch{max_results}',
+            'socket_timeout': 12,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(query, download=False)
+            entries = info.get('entries', []) if info else []
+            results = []
+            for entry in entries:
+                if not entry:
+                    continue
+                yt_id    = entry.get('id', '')
+                title    = entry.get('title', 'Unknown')
+                channel  = entry.get('channel', entry.get('uploader', 'Unknown'))
+                # Use YouTube thumbnail at good resolution
+                thumb    = f'https://i.ytimg.com/vi/{yt_id}/hqdefault.jpg' if yt_id else ''
+                duration = entry.get('duration', 0) or 0
+                # Skip anything that looks like a playlist, album, or > 10 min video
+                if duration > 600:
+                    continue
+                results.append({
+                    'id':     f'yt_{yt_id}',
+                    'title':  title,
+                    'artist': channel,
+                    'image':  thumb,
+                    'url':    None,
+                    'source': 'youtube',
+                    'yt_id':  yt_id,
+                })
+            return results
+    except Exception as e:
+        print(f'YouTube search error: {e}')
         return []
 
 
@@ -685,10 +770,24 @@ def search():
     if cached is not None:
         return jsonify({'success': True, 'data': {'results': cached}})
     try:
-        songs = jiosaavn_search(query)
-        set_cached_search(query, songs)
-        return jsonify({'success': True, 'data': {'results': songs}})
+        import concurrent.futures
+        # Run JioSaavn and YouTube searches in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            jio_future = executor.submit(jiosaavn_search, query)
+            yt_future  = executor.submit(youtube_search_songs, query, 5)
+            jio_songs  = jio_future.result(timeout=12)
+            yt_songs   = yt_future.result(timeout=12)
+
+        # De-duplicate: remove YouTube results whose title closely matches a JioSaavn result
+        jio_titles = {s['title'].lower().strip() for s in jio_songs}
+        yt_unique  = [s for s in yt_songs if s['title'].lower().strip() not in jio_titles]
+
+        # JioSaavn results first (higher quality), then unique YouTube extras
+        merged = jio_songs + yt_unique
+        set_cached_search(query, merged)
+        return jsonify({'success': True, 'data': {'results': merged}})
     except Exception as e:
+        print(f'Search error: {e}')
         return jsonify({'success': False, 'error': str(e)})
 
 
@@ -717,15 +816,53 @@ def stream_audio():
     if not song_id:
         return 'Missing song id', 400
 
-    # 1️⃣  Try JioSaavn first
-    audio_url = jiosaavn_get_audio_url(song_id)
+    audio_url = ''
     source    = 'jiosaavn'
 
-    # 2️⃣  Auto-fallback to YouTube if JioSaavn returned nothing
-    if not audio_url and title:
-        print(f'JioSaavn failed for {song_id} — trying YouTube fallback')
-        audio_url = youtube_get_audio_url(title, artist)
-        source    = 'youtube'
+    # Songs sourced from YouTube search have a 'yt_' prefix — go straight to yt-dlp
+    if song_id.startswith('yt_'):
+        yt_id = song_id[3:]  # strip the 'yt_' prefix to get the real YouTube video ID
+        print(f'Direct YouTube stream for video ID: {yt_id}')
+        # Use title|artist key for cache; fall back to video URL if title missing
+        cache_key = f'{title.lower().strip()}|{artist.lower().strip()}' if title else yt_id
+        audio_url = get_cached_yt_url(cache_key)
+        if not audio_url:
+            try:
+                import yt_dlp
+                ydl_opts = {
+                    'format': 'bestaudio/best',
+                    'quiet': True,
+                    'no_warnings': True,
+                    'noplaylist': True,
+                    'extract_flat': False,
+                    'skip_download': True,
+                    'socket_timeout': 15,
+                }
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(f'https://www.youtube.com/watch?v={yt_id}', download=False)
+                    if info:
+                        formats = info.get('formats', [])
+                        audio_only = [f for f in formats if f.get('vcodec') == 'none' and f.get('acodec') != 'none']
+                        if audio_only:
+                            best = max(audio_only, key=lambda f: f.get('abr') or f.get('tbr') or 0)
+                            audio_url = best.get('url', '')
+                        if not audio_url:
+                            audio_url = info.get('url', '')
+                        if audio_url:
+                            set_cached_yt_url(cache_key, audio_url)
+            except Exception as e:
+                print(f'Direct YouTube stream error: {e}')
+        source = 'youtube'
+    else:
+        # 1️⃣  Try JioSaavn first
+        audio_url = jiosaavn_get_audio_url(song_id)
+        source    = 'jiosaavn'
+
+        # 2️⃣  Auto-fallback to YouTube if JioSaavn returned nothing
+        if not audio_url and title:
+            print(f'JioSaavn failed for {song_id} — trying YouTube fallback')
+            audio_url = youtube_get_audio_url(title, artist)
+            source    = 'youtube'
 
     if not audio_url:
         return 'Could not resolve audio URL from JioSaavn or YouTube', 404
