@@ -9,7 +9,8 @@ Zyra Backend — Flask server with:
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 import requests as http_requests
-import random, time, os, re, html, jwt, hashlib
+import random, time, os, re, html, jwt, hashlib, ssl
+import certifi
 from base64 import b64decode
 from datetime import datetime, timedelta
 from bson import ObjectId
@@ -30,7 +31,17 @@ JWT_EXPIRY_DAYS = 30
 
 # ─── MongoDB ──────────────────────────────────────────────────────────────────
 
-mongo  = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+mongo  = MongoClient(
+    MONGO_URI,
+    serverSelectionTimeoutMS=10000,
+    connectTimeoutMS=10000,
+    socketTimeoutMS=20000,
+    tls=True,
+    tlsCAFile=certifi.where(),
+    tlsAllowInvalidCertificates=True,
+    tlsAllowInvalidHostnames=True,
+    retryWrites=True,
+)
 db     = mongo['zyra']
 users  = db['users']
 
