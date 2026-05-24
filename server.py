@@ -2,19 +2,18 @@
 Zyra Backend — Flask server with:
   • JioSaavn music search + streaming
   • JWT Email/Password authentication
-  • Per-user MongoDB data (favorites, playlists, history, downloads)
+  • Per-user PostgreSQL data (favorites, playlists, history, downloads)
   • Smart mood-based autoplay recommendations
 """
 
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 import requests as http_requests
-import random, time, os, re, html, jwt, hashlib, ssl
-import certifi
+import random, time, os, re, html, jwt, hashlib, uuid
 from base64 import b64decode
 from datetime import datetime, timedelta
-from bson import ObjectId
-from pymongo import MongoClient
+import psycopg2
+import psycopg2.extras
 from recommender import (
     detect_mood, get_query_for_mood, get_time_of_day_mood,
     build_recommendation_reason, MOOD_LABELS
@@ -25,25 +24,44 @@ CORS(app)
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 
-MONGO_URI  = os.environ.get('MONGO_URI',  'mongodb+srv://Bablu-Zyra:Bablu2006@zyra.sivio8f.mongodb.net/zyra?appName=Zyra')
-JWT_SECRET = os.environ.get('JWT_SECRET', 'zyra-super-secret-2025')
+DATABASE_URL    = os.environ.get('DATABASE_URL', '')
+JWT_SECRET      = os.environ.get('JWT_SECRET', 'zyra-super-secret-2025')
 JWT_EXPIRY_DAYS = 30
 
-# ─── MongoDB ──────────────────────────────────────────────────────────────────
+# ─── PostgreSQL ───────────────────────────────────────────────────────────────
 
-mongo  = MongoClient(
-    MONGO_URI,
-    serverSelectionTimeoutMS=10000,
-    connectTimeoutMS=10000,
-    socketTimeoutMS=20000,
-    tls=True,
-    tlsCAFile=certifi.where(),
-    tlsAllowInvalidCertificates=True,
-    tlsAllowInvalidHostnames=True,
-    retryWrites=True,
-)
-db     = mongo['zyra']
-users  = db['users']
+def get_db():
+    return psycopg2.connect(DATABASE_URL, sslmode='require',
+                            cursor_factory=psycopg2.extras.RealDictCursor)
+
+def init_db():
+    if not DATABASE_URL:
+        print('WARNING: DATABASE_URL not set — skipping DB init')
+        return
+    try:
+        conn = get_db()
+        cur  = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id            TEXT PRIMARY KEY,
+                email         TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                username      TEXT,
+                created_at    TIMESTAMP DEFAULT NOW(),
+                favorites     JSONB DEFAULT '[]'::jsonb,
+                playlists     JSONB DEFAULT '[]'::jsonb,
+                history       JSONB DEFAULT '[]'::jsonb,
+                downloads     JSONB DEFAULT '[]'::jsonb,
+                settings      JSONB DEFAULT '{"shake_enabled":false,"smart_autoplay":true}'::jsonb
+            )
+        """)
+        conn.commit()
+        cur.close(); conn.close()
+        print('PostgreSQL DB initialized OK')
+    except Exception as e:
+        print(f'DB init error: {e}')
+
+init_db()
 
 # ─── In-memory cache ──────────────────────────────────────────────────────────
 
@@ -72,9 +90,30 @@ def get_cached_url(track_id):
 def set_cached_url(track_id, url):
     url_cache[track_id] = {'ts': time.time(), 'url': url}
 
-# ─── JWT Helpers ──────────────────────────────────────────────────────────────
+# ─── DB Helpers ───────────────────────────────────────────────────────────────
 
-# ─── Password Hashing (built-in hashlib — no C extensions needed) ────────────
+def db_get_user_by_email(email):
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE email = %s", (email,))
+    row = cur.fetchone(); cur.close(); conn.close()
+    return dict(row) if row else None
+
+def db_get_user_by_id(user_id):
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+    row = cur.fetchone(); cur.close(); conn.close()
+    return dict(row) if row else None
+
+def db_update_user(user_id, **fields):
+    if not fields:
+        return
+    sets   = ', '.join(f"{k} = %s" for k in fields)
+    values = list(fields.values()) + [user_id]
+    conn   = get_db(); cur = conn.cursor()
+    cur.execute(f"UPDATE users SET {sets} WHERE id = %s", values)
+    conn.commit(); cur.close(); conn.close()
+
+# ─── Password Hashing ─────────────────────────────────────────────────────────
 
 def hash_password(password: str) -> str:
     salt = os.urandom(32)
@@ -83,8 +122,8 @@ def hash_password(password: str) -> str:
 
 def verify_password(stored_hex: str, provided: str) -> bool:
     try:
-        stored = bytes.fromhex(stored_hex)
-        salt   = stored[:32]
+        stored     = bytes.fromhex(stored_hex)
+        salt       = stored[:32]
         stored_key = stored[32:]
         key = hashlib.pbkdf2_hmac('sha256', provided.encode('utf-8'), salt, 100000)
         return key == stored_key
@@ -112,18 +151,12 @@ def get_user_from_request():
     auth = request.headers.get('Authorization', '')
     if not auth.startswith('Bearer '):
         return None
-    token = auth[7:]
-    user_id = verify_token(token)
+    user_id = verify_token(auth[7:])
     if not user_id:
         return None
-    try:
-        user = users.find_one({'_id': ObjectId(user_id)})
-        return user
-    except Exception:
-        return None
+    return db_get_user_by_id(user_id)
 
 def user_required(f):
-    """Decorator to protect routes that need a logged-in user."""
     from functools import wraps
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -133,17 +166,10 @@ def user_required(f):
         return f(user, *args, **kwargs)
     return decorated
 
-def serialize_user(user):
-    return {
-        'id':       str(user['_id']),
-        'username': user.get('username', ''),
-        'email':    user.get('email', ''),
-    }
-
 # ─── JioSaavn Helpers ─────────────────────────────────────────────────────────
 
 JIOSAAVN_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
     'Accept': 'application/json',
 }
 
@@ -219,13 +245,26 @@ def jiosaavn_get_audio_url(song_id: str) -> str:
         print(f'JioSaavn URL fetch error: {e}')
         return ''
 
+# ─── Diagnostics ──────────────────────────────────────────────────────────────
+
+@app.route('/health', methods=['GET'])
+def health():
+    db_ok = False
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute('SELECT 1'); cur.close(); conn.close()
+        db_ok = True
+    except Exception as e:
+        pass
+    return jsonify({'status': 'ok', 'backend': 'JioSaavn + PostgreSQL', 'db': 'connected' if db_ok else 'error'})
+
 @app.route('/api/test-db', methods=['GET'])
 def test_db():
-    """Diagnostic route — tests MongoDB connectivity."""
     try:
-        mongo.admin.command('ping')
-        count = users.count_documents({})
-        return jsonify({'success': True, 'message': 'MongoDB connected!', 'user_count': count})
+        conn = get_db(); cur = conn.cursor()
+        cur.execute('SELECT COUNT(*) as cnt FROM users')
+        row = cur.fetchone(); cur.close(); conn.close()
+        return jsonify({'success': True, 'message': 'PostgreSQL connected!', 'user_count': row['cnt']})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -234,7 +273,7 @@ def test_db():
 @app.route('/api/auth/register', methods=['POST'])
 def register():
     try:
-        data = request.get_json() or {}
+        data     = request.get_json() or {}
         email    = data.get('email', '').strip().lower()
         password = data.get('password', '').strip()
         username = data.get('username', '').strip() or email.split('@')[0]
@@ -243,98 +282,93 @@ def register():
             return jsonify({'success': False, 'error': 'Email and password required'})
         if len(password) < 6:
             return jsonify({'success': False, 'error': 'Password must be at least 6 characters'})
-        if users.find_one({'email': email}):
+        if db_get_user_by_email(email):
             return jsonify({'success': False, 'error': 'Email already registered'})
 
-        hashed = hash_password(password)
-        result = users.insert_one({
-            'email':         email,
-            'password_hash': hashed,
-            'username':      username,
-            'created_at':    datetime.utcnow(),
-            'favorites':     [],
-            'playlists':     [],
-            'history':       [],
-            'downloads':     [],
-            'settings':      {'shake_enabled': False, 'smart_autoplay': True},
-        })
-        user_id = str(result.inserted_id)
-        token   = create_token(user_id)
+        user_id = str(uuid.uuid4())
+        hashed  = hash_password(password)
+
+        conn = get_db(); cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO users (id, email, password_hash, username) VALUES (%s, %s, %s, %s)",
+            (user_id, email, hashed, username)
+        )
+        conn.commit(); cur.close(); conn.close()
+
+        token = create_token(user_id)
         return jsonify({'success': True, 'token': token, 'userId': user_id, 'username': username})
     except Exception as e:
         print(f'Register error: {e}')
-        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/auth/login', methods=['POST'])
 def login():
     try:
-        data = request.get_json() or {}
+        data     = request.get_json() or {}
         email    = data.get('email', '').strip().lower()
         password = data.get('password', '').strip()
 
         if not email or not password:
             return jsonify({'success': False, 'error': 'Email and password required'})
 
-        user = users.find_one({'email': email})
+        user = db_get_user_by_email(email)
         if not user:
             return jsonify({'success': False, 'error': 'Invalid email or password'})
-
         if not verify_password(user['password_hash'], password):
             return jsonify({'success': False, 'error': 'Invalid email or password'})
 
-        user_id = str(user['_id'])
-        token   = create_token(user_id)
-        return jsonify({'success': True, 'token': token, 'userId': user_id, 'username': user.get('username', '')})
+        token = create_token(user['id'])
+        return jsonify({'success': True, 'token': token, 'userId': user['id'], 'username': user.get('username', '')})
     except Exception as e:
         print(f'Login error: {e}')
-        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # ─── User Data Routes ─────────────────────────────────────────────────────────
+
+import json as _json
 
 @app.route('/api/user/profile', methods=['GET'])
 @user_required
 def get_profile(user):
     return jsonify({'success': True, 'data': {
-        **serialize_user(user),
-        'settings': user.get('settings', {}),
+        'id': user['id'], 'email': user['email'], 'username': user['username'],
+        'settings': user.get('settings') or {},
     }})
 
 
 @app.route('/api/user/favorites', methods=['GET'])
 @user_required
 def get_favorites(user):
-    return jsonify({'success': True, 'data': {'favorites': user.get('favorites', [])}})
+    return jsonify({'success': True, 'data': {'favorites': user.get('favorites') or []}})
 
 
 @app.route('/api/user/favorites', methods=['POST'])
 @user_required
 def toggle_favorite(user):
-    song = request.get_json() or {}
+    song    = request.get_json() or {}
     song_id = song.get('id', '')
     if not song_id:
         return jsonify({'success': False, 'error': 'No song id'})
 
-    uid   = user['_id']
-    favs  = user.get('favorites', [])
+    favs   = user.get('favorites') or []
     exists = next((f for f in favs if f['id'] == song_id), None)
 
     if exists:
-        users.update_one({'_id': uid}, {'$pull': {'favorites': {'id': song_id}}})
+        favs   = [f for f in favs if f['id'] != song_id]
         action = 'removed'
     else:
-        entry = {k: song.get(k, '') for k in ['id', 'title', 'artist', 'image']}
-        users.update_one({'_id': uid}, {'$push': {'favorites': entry}})
+        favs.append({k: song.get(k, '') for k in ['id', 'title', 'artist', 'image']})
         action = 'added'
 
-    updated = users.find_one({'_id': uid})
-    return jsonify({'success': True, 'action': action, 'data': {'favorites': updated.get('favorites', [])}})
+    db_update_user(user['id'], favorites=_json.dumps(favs))
+    return jsonify({'success': True, 'action': action, 'data': {'favorites': favs}})
 
 
 @app.route('/api/user/playlists', methods=['GET'])
 @user_required
 def get_playlists(user):
-    return jsonify({'success': True, 'data': {'playlists': user.get('playlists', [])}})
+    return jsonify({'success': True, 'data': {'playlists': user.get('playlists') or []}})
 
 
 @app.route('/api/user/playlists', methods=['POST'])
@@ -346,169 +380,121 @@ def create_playlist(user):
     if not name:
         return jsonify({'success': False, 'error': 'Playlist name required'})
 
-    playlist = {
-        'id':   str(ObjectId()),
-        'name': name,
-        'songs': [song] if song else [],
-    }
-    users.update_one({'_id': user['_id']}, {'$push': {'playlists': playlist}})
-    updated = users.find_one({'_id': user['_id']})
-    return jsonify({'success': True, 'data': {'playlists': updated.get('playlists', [])}})
+    playlists = user.get('playlists') or []
+    playlist  = {'id': str(uuid.uuid4()), 'name': name, 'songs': [song] if song else []}
+    playlists.append(playlist)
+
+    db_update_user(user['id'], playlists=_json.dumps(playlists))
+    return jsonify({'success': True, 'data': {'playlists': playlists}})
 
 
 @app.route('/api/user/playlists/<playlist_id>/songs', methods=['POST'])
 @user_required
 def add_to_playlist(user, playlist_id):
-    song = request.get_json() or {}
+    song    = request.get_json() or {}
     song_id = song.get('id', '')
     if not song_id:
         return jsonify({'success': False, 'error': 'No song id'})
 
-    uid = user['_id']
-    playlists = user.get('playlists', [])
-    pl = next((p for p in playlists if p['id'] == playlist_id), None)
-    if not pl:
-        return jsonify({'success': False, 'error': 'Playlist not found'})
+    playlists = user.get('playlists') or []
+    for pl in playlists:
+        if pl['id'] == playlist_id:
+            if not any(s['id'] == song_id for s in pl.get('songs', [])):
+                pl['songs'].append({k: song.get(k, '') for k in ['id', 'title', 'artist', 'image']})
+            break
 
-    # Avoid duplicates
-    if any(s['id'] == song_id for s in pl.get('songs', [])):
-        return jsonify({'success': True, 'message': 'Already in playlist'})
-
-    users.update_one(
-        {'_id': uid, 'playlists.id': playlist_id},
-        {'$push': {'playlists.$.songs': {k: song.get(k, '') for k in ['id', 'title', 'artist', 'image']}}}
-    )
-    updated = users.find_one({'_id': uid})
-    return jsonify({'success': True, 'data': {'playlists': updated.get('playlists', [])}})
+    db_update_user(user['id'], playlists=_json.dumps(playlists))
+    return jsonify({'success': True, 'data': {'playlists': playlists}})
 
 
 @app.route('/api/user/history', methods=['GET'])
 @user_required
 def get_history(user):
-    history = user.get('history', [])
+    history = user.get('history') or []
     return jsonify({'success': True, 'data': {'history': history[-50:][::-1]}})
 
 
 @app.route('/api/user/history', methods=['POST'])
 @user_required
 def add_history(user):
-    song = request.get_json() or {}
+    song    = request.get_json() or {}
     song_id = song.get('id', '')
     if not song_id:
         return jsonify({'success': False, 'error': 'No song id'})
 
-    mood = detect_mood(song.get('title', ''), song.get('artist', ''))
-    entry = {
-        'id':        song_id,
-        'title':     song.get('title', ''),
-        'artist':    song.get('artist', ''),
-        'image':     song.get('image', ''),
-        'mood':      mood,
-        'played_at': datetime.utcnow().isoformat(),
+    mood    = detect_mood(song.get('title', ''), song.get('artist', ''))
+    entry   = {
+        'id': song_id, 'title': song.get('title', ''), 'artist': song.get('artist', ''),
+        'image': song.get('image', ''), 'mood': mood, 'played_at': datetime.utcnow().isoformat(),
     }
+    history = user.get('history') or []
+    history.append(entry)
+    history = history[-100:]  # Keep last 100
 
-    uid = user['_id']
-    # Keep last 100 history entries
-    users.update_one({'_id': uid}, {'$push': {
-        'history': {'$each': [entry], '$slice': -100}
-    }})
+    db_update_user(user['id'], history=_json.dumps(history))
     return jsonify({'success': True, 'mood': mood, 'mood_label': MOOD_LABELS.get(mood, '')})
 
 
 @app.route('/api/user/downloads', methods=['GET'])
 @user_required
 def get_downloads(user):
-    return jsonify({'success': True, 'data': {'downloads': user.get('downloads', [])}})
+    return jsonify({'success': True, 'data': {'downloads': user.get('downloads') or []}})
 
 
 @app.route('/api/user/downloads', methods=['POST'])
 @user_required
 def save_download(user):
-    song = request.get_json() or {}
+    song    = request.get_json() or {}
     song_id = song.get('id', '')
     if not song_id:
         return jsonify({'success': False, 'error': 'No song id'})
 
-    entry = {k: song.get(k, '') for k in ['id', 'title', 'artist', 'image', 'localUri']}
-    uid = user['_id']
-    downloads = user.get('downloads', [])
+    downloads = user.get('downloads') or []
     if not any(d['id'] == song_id for d in downloads):
-        users.update_one({'_id': uid}, {'$push': {'downloads': entry}})
-    updated = users.find_one({'_id': uid})
-    return jsonify({'success': True, 'data': {'downloads': updated.get('downloads', [])}})
+        downloads.append({k: song.get(k, '') for k in ['id', 'title', 'artist', 'image', 'localUri']})
+
+    db_update_user(user['id'], downloads=_json.dumps(downloads))
+    return jsonify({'success': True, 'data': {'downloads': downloads}})
 
 
 @app.route('/api/user/settings', methods=['POST'])
 @user_required
 def update_settings(user):
-    data = request.get_json() or {}
-    uid = user['_id']
-    updates = {}
-    if 'shake_enabled' in data:
-        updates['settings.shake_enabled'] = bool(data['shake_enabled'])
-    if 'smart_autoplay' in data:
-        updates['settings.smart_autoplay'] = bool(data['smart_autoplay'])
-    if updates:
-        users.update_one({'_id': uid}, {'$set': updates})
-    updated = users.find_one({'_id': uid})
-    return jsonify({'success': True, 'data': {'settings': updated.get('settings', {})}})
+    data     = request.get_json() or {}
+    settings = user.get('settings') or {'shake_enabled': False, 'smart_autoplay': True}
+    if 'shake_enabled'  in data: settings['shake_enabled']  = bool(data['shake_enabled'])
+    if 'smart_autoplay' in data: settings['smart_autoplay'] = bool(data['smart_autoplay'])
+    db_update_user(user['id'], settings=_json.dumps(settings))
+    return jsonify({'success': True, 'data': {'settings': settings}})
 
-# ─── Recommendation / Autoplay Route ─────────────────────────────────────────
+# ─── Recommendation / Autoplay ────────────────────────────────────────────────
 
 @app.route('/api/autoplay', methods=['GET'])
 def autoplay():
-    """
-    Smart autoplay: returns the next recommended song based on mood.
-    Optional: userId for personalised history-based recommendations.
-    """
-    song_id  = request.args.get('songId', '').strip()
-    user_id  = request.args.get('userId', '').strip()
-    mood_override = request.args.get('mood', '').strip()
+    song_id       = request.args.get('songId', '').strip()
+    user_id       = request.args.get('userId', '').strip()
+    mood_override = request.args.get('mood',   '').strip()
 
     exclude_ids = set()
     user_mood   = mood_override or None
     is_time_based = False
 
-    # Enrich with user data if logged in
     if user_id:
         try:
-            user = users.find_one({'_id': ObjectId(user_id)})
+            user = db_get_user_by_id(user_id)
             if user:
-                history = user.get('history', [])
-                # Collect played IDs to exclude
+                history = user.get('history') or []
                 exclude_ids = {h['id'] for h in history[-20:]}
-                # Detect user's recent dominant mood
                 if not user_mood and history:
                     recent_moods = [h.get('mood', 'default') for h in history[-10:]]
                     user_mood = max(set(recent_moods), key=recent_moods.count)
         except Exception:
             pass
 
-    # Detect mood of current song if available
-    if not user_mood and song_id:
-        # Try to get song title from JioSaavn
-        try:
-            resp = http_requests.get(
-                'https://www.jiosaavn.com/api.php',
-                params={'__call': 'song.getDetails', 'cc': 'in',
-                        '_format': 'json', 'pids': song_id, 'ctx': 'android', '_marker': '0'},
-                headers=JIOSAAVN_HEADERS, timeout=6
-            )
-            data = resp.json()
-            song_data = data.get(song_id, {})
-            title  = clean_html(song_data.get('song', ''))
-            artist = clean_html(song_data.get('primary_artists', ''))
-            if title:
-                user_mood = detect_mood(title, artist)
-        except Exception:
-            pass
-
-    # Fall back to time-of-day mood
     if not user_mood or user_mood == 'default':
         user_mood = get_time_of_day_mood()
         is_time_based = True
 
-    # Search JioSaavn for songs matching the mood
     query   = get_query_for_mood(user_mood)
     results = get_cached_search(query)
     if not results:
@@ -516,11 +502,7 @@ def autoplay():
         if results:
             set_cached_search(query, results)
 
-    # Filter out recently played songs
-    filtered = [s for s in results if s['id'] not in exclude_ids]
-    if not filtered:
-        filtered = results  # If all excluded, play anyway
-
+    filtered = [s for s in results if s['id'] not in exclude_ids] or results
     if not filtered:
         return jsonify({'success': False, 'error': 'No recommendations found'})
 
@@ -528,21 +510,15 @@ def autoplay():
     reason = build_recommendation_reason(user_mood, is_time_based)
 
     return jsonify({
-        'success': True,
-        'song':    song,
-        'mood':    user_mood,
-        'mood_label': MOOD_LABELS.get(user_mood, ''),
-        'reason':  reason,
+        'success': True, 'song': song, 'mood': user_mood,
+        'mood_label': MOOD_LABELS.get(user_mood, ''), 'reason': reason,
     })
 
 
 @app.route('/api/recommendations/queue', methods=['GET'])
 def recommendations_queue():
-    """Returns 3 upcoming recommended songs for the queue display."""
     song_id = request.args.get('songId', '').strip()
-    user_id = request.args.get('userId', '').strip()
-    mood    = request.args.get('mood', '').strip() or get_time_of_day_mood()
-
+    mood    = request.args.get('mood',   '').strip() or get_time_of_day_mood()
     exclude_ids = {song_id} if song_id else set()
 
     query   = get_query_for_mood(mood)
@@ -607,8 +583,7 @@ def stream_audio():
 
         def generate():
             for chunk in req.iter_content(chunk_size=32768):
-                if chunk:
-                    yield chunk
+                if chunk: yield chunk
 
         headers = {'Content-Type': req.headers.get('Content-Type', 'audio/mpeg'), 'Accept-Ranges': 'bytes'}
         if 'Content-Range'  in req.headers: headers['Content-Range']  = req.headers['Content-Range']
@@ -624,13 +599,7 @@ def refresh_url():
     if not song_id:
         return jsonify({'success': False, 'error': 'No id provided'})
     url_cache.pop(song_id, None)
-    proxy_url = f"{request.host_url}api/stream?id={song_id}"
-    return jsonify({'success': True, 'data': {'url': proxy_url}})
-
-
-@app.route('/health', methods=['GET'])
-def health():
-    return jsonify({'status': 'ok', 'backend': 'JioSaavn + MongoDB'})
+    return jsonify({'success': True, 'data': {'url': f"{request.host_url}api/stream?id={song_id}"}})
 
 
 if __name__ == '__main__':
