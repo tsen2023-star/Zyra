@@ -12,8 +12,8 @@ import requests as http_requests
 import random, time, os, re, html, jwt, hashlib, uuid
 from base64 import b64decode
 from datetime import datetime, timedelta
-import psycopg2
-import psycopg2.extras
+import pg8000.dbapi
+from urllib.parse import urlparse
 from recommender import (
     detect_mood, get_query_for_mood, get_time_of_day_mood,
     build_recommendation_reason, MOOD_LABELS
@@ -31,8 +31,42 @@ JWT_EXPIRY_DAYS = 30
 # ─── PostgreSQL ───────────────────────────────────────────────────────────────
 
 def get_db():
-    return psycopg2.connect(DATABASE_URL, sslmode='require',
-                            cursor_factory=psycopg2.extras.RealDictCursor)
+    parsed = urlparse(DATABASE_URL)
+    return pg8000.dbapi.connect(
+        host=parsed.hostname,
+        database=parsed.path.lstrip('/'),
+        user=parsed.username,
+        password=parsed.password,
+        port=parsed.port or 5432,
+        ssl_context=None   # Internal Render network — no SSL needed
+    )
+
+def _row_to_dict(description, row):
+    if row is None or description is None:
+        return None
+    return {desc[0]: row[i] for i, desc in enumerate(description)}
+
+def _rows_to_dicts(description, rows):
+    if not description or not rows:
+        return []
+    cols = [d[0] for d in description]
+    return [dict(zip(cols, row)) for row in rows]
+
+def _to_list(val):
+    if val is None: return []
+    if isinstance(val, list): return val
+    if isinstance(val, str):
+        try: return _json.loads(val)
+        except: return []
+    return []
+
+def _to_dict_safe(val):
+    if val is None: return {}
+    if isinstance(val, dict): return val
+    if isinstance(val, str):
+        try: return _json.loads(val)
+        except: return {}
+    return {}
 
 def init_db():
     if not DATABASE_URL:
@@ -95,14 +129,30 @@ def set_cached_url(track_id, url):
 def db_get_user_by_email(email):
     conn = get_db(); cur = conn.cursor()
     cur.execute("SELECT * FROM users WHERE email = %s", (email,))
-    row = cur.fetchone(); cur.close(); conn.close()
-    return dict(row) if row else None
+    row = cur.fetchone()
+    result = _row_to_dict(cur.description, row)
+    cur.close(); conn.close()
+    if result:
+        result['favorites'] = _to_list(result.get('favorites'))
+        result['playlists'] = _to_list(result.get('playlists'))
+        result['history']   = _to_list(result.get('history'))
+        result['downloads'] = _to_list(result.get('downloads'))
+        result['settings']  = _to_dict_safe(result.get('settings'))
+    return result
 
 def db_get_user_by_id(user_id):
     conn = get_db(); cur = conn.cursor()
     cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))
-    row = cur.fetchone(); cur.close(); conn.close()
-    return dict(row) if row else None
+    row = cur.fetchone()
+    result = _row_to_dict(cur.description, row)
+    cur.close(); conn.close()
+    if result:
+        result['favorites'] = _to_list(result.get('favorites'))
+        result['playlists'] = _to_list(result.get('playlists'))
+        result['history']   = _to_list(result.get('history'))
+        result['downloads'] = _to_list(result.get('downloads'))
+        result['settings']  = _to_dict_safe(result.get('settings'))
+    return result
 
 def db_update_user(user_id, **fields):
     if not fields:
@@ -262,9 +312,11 @@ def health():
 def test_db():
     try:
         conn = get_db(); cur = conn.cursor()
-        cur.execute('SELECT COUNT(*) as cnt FROM users')
-        row = cur.fetchone(); cur.close(); conn.close()
-        return jsonify({'success': True, 'message': 'PostgreSQL connected!', 'user_count': row['cnt']})
+        cur.execute('SELECT COUNT(*) FROM users')
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        count = row[0] if row else 0
+        return jsonify({'success': True, 'message': 'PostgreSQL connected!', 'user_count': count})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
