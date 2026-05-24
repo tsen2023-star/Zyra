@@ -104,10 +104,12 @@ init_db()
 
 # ─── In-memory cache ──────────────────────────────────────────────────────────
 
-SEARCH_CACHE_TTL = 300
-URL_CACHE_TTL    = 780
-search_cache = {}
-url_cache    = {}
+SEARCH_CACHE_TTL  = 300
+URL_CACHE_TTL     = 780
+YT_URL_CACHE_TTL  = 300   # YouTube URLs expire after ~6h; we refresh after 5 min to be safe
+search_cache  = {}
+url_cache     = {}
+yt_url_cache  = {}         # keyed by "title|artist"
 
 def get_cached_search(query):
     item = search_cache.get(query)
@@ -128,6 +130,16 @@ def get_cached_url(track_id):
 
 def set_cached_url(track_id, url):
     url_cache[track_id] = {'ts': time.time(), 'url': url}
+
+def get_cached_yt_url(key):
+    item = yt_url_cache.get(key)
+    if item and time.time() - item['ts'] < YT_URL_CACHE_TTL:
+        return item['url']
+    yt_url_cache.pop(key, None)
+    return None
+
+def set_cached_yt_url(key, url):
+    yt_url_cache[key] = {'ts': time.time(), 'url': url}
 
 # ─── DB Helpers ───────────────────────────────────────────────────────────────
 
@@ -299,6 +311,71 @@ def jiosaavn_get_audio_url(song_id: str) -> str:
     except Exception as e:
         print(f'JioSaavn URL fetch error: {e}')
         return ''
+
+# ─── YouTube Fallback ────────────────────────────────────────────────────────
+
+def youtube_get_audio_url(title: str, artist: str) -> str:
+    """Search YouTube for 'title artist' and return a direct audio stream URL.
+    Uses yt-dlp in extract-only mode (no download). Returns '' on failure."""
+    key = f"{title.lower().strip()}|{artist.lower().strip()}"
+    cached = get_cached_yt_url(key)
+    if cached:
+        return cached
+    try:
+        import yt_dlp
+        search_query = f"{title} {artist} official audio"
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'quiet': True,
+            'no_warnings': True,
+            'noplaylist': True,
+            'extract_flat': False,
+            'skip_download': True,
+            # Search YouTube and pick the first result
+            'default_search': 'ytsearch1',
+            'socket_timeout': 15,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(search_query, download=False)
+            # ytsearch returns a playlist-like dict with entries
+            if info and 'entries' in info:
+                info = info['entries'][0]
+            if not info:
+                return ''
+            # Pick the best audio-only format URL
+            formats = info.get('formats', [])
+            audio_url = ''
+            # Prefer audio-only formats (no video)
+            audio_only = [f for f in formats if f.get('vcodec') == 'none' and f.get('acodec') != 'none']
+            if audio_only:
+                # Pick highest quality audio
+                best = max(audio_only, key=lambda f: f.get('abr') or f.get('tbr') or 0)
+                audio_url = best.get('url', '')
+            if not audio_url:
+                # Fall back to any format with audio
+                audio_url = info.get('url', '')
+            if audio_url:
+                set_cached_yt_url(key, audio_url)
+                print(f'YouTube fallback OK for: {title} — {artist}')
+            return audio_url
+    except Exception as e:
+        print(f'YouTube fallback error: {e}')
+        return ''
+
+
+@app.route('/api/youtube-fallback', methods=['GET'])
+def youtube_fallback():
+    """Explicit endpoint: /api/youtube-fallback?title=...&artist=...
+    Returns { success, url } for the frontend to stream directly."""
+    title  = request.args.get('title',  '').strip()
+    artist = request.args.get('artist', '').strip()
+    if not title:
+        return jsonify({'success': False, 'error': 'title is required'}), 400
+    url = youtube_get_audio_url(title, artist)
+    if url:
+        return jsonify({'success': True, 'url': url, 'source': 'youtube'})
+    return jsonify({'success': False, 'error': 'Could not find on YouTube'}), 404
+
 
 # ─── Diagnostics ──────────────────────────────────────────────────────────────
 
@@ -626,23 +703,40 @@ def random_song():
 
 @app.route('/api/stream', methods=['GET'])
 def stream_audio():
-    song_id = request.args.get('id', '').strip()
+    song_id = request.args.get('id',     '').strip()
+    title   = request.args.get('title',  '').strip()
+    artist  = request.args.get('artist', '').strip()
     if not song_id:
         return 'Missing song id', 400
+
+    # 1️⃣  Try JioSaavn first
     audio_url = jiosaavn_get_audio_url(song_id)
+    source    = 'jiosaavn'
+
+    # 2️⃣  Auto-fallback to YouTube if JioSaavn returned nothing
+    if not audio_url and title:
+        print(f'JioSaavn failed for {song_id} — trying YouTube fallback')
+        audio_url = youtube_get_audio_url(title, artist)
+        source    = 'youtube'
+
     if not audio_url:
-        return 'Could not resolve audio URL', 404
+        return 'Could not resolve audio URL from JioSaavn or YouTube', 404
+
     try:
         req = http_requests.get(audio_url, stream=True, headers={
             'User-Agent': 'Mozilla/5.0',
             'Range': request.headers.get('Range', 'bytes=0-'),
-        }, timeout=15)
+        }, timeout=20)
 
         def generate():
             for chunk in req.iter_content(chunk_size=32768):
                 if chunk: yield chunk
 
-        headers = {'Content-Type': req.headers.get('Content-Type', 'audio/mpeg'), 'Accept-Ranges': 'bytes'}
+        headers = {
+            'Content-Type': req.headers.get('Content-Type', 'audio/mpeg'),
+            'Accept-Ranges': 'bytes',
+            'X-Audio-Source': source,   # lets the frontend know where audio came from
+        }
         if 'Content-Range'  in req.headers: headers['Content-Range']  = req.headers['Content-Range']
         if 'Content-Length' in req.headers: headers['Content-Length'] = req.headers['Content-Length']
         return Response(generate(), status=req.status_code, headers=headers)
