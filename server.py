@@ -332,39 +332,55 @@ def jiosaavn_search(query: str):
         return []
 
 
-def youtube_search_songs(query: str, max_results: int = 5):
-    """Search YouTube for songs matching 'query'. Returns list of song dicts
-    with synthetic IDs (prefixed 'yt_') so the frontend knows to use
-    /api/youtube-fallback for streaming rather than /api/stream."""
+def youtube_search_songs(query: str, max_results: int = 10):
+    """Search YouTube for songs. Returns list of song dicts with yt_ prefixed IDs.
+    Uses yt-dlp extract_flat for fast metadata-only search (no download)."""
     try:
         import yt_dlp
+        # Append 'audio' hint to bias toward music results
+        search_query = f"{query} song"
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,
-            'extract_flat': True,   # fast — just metadata, no URL extraction
+            'extract_flat': True,
             'default_search': f'ytsearch{max_results}',
-            'socket_timeout': 12,
+            'socket_timeout': 15,
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(query, download=False)
+            info = ydl.extract_info(search_query, download=False)
             entries = info.get('entries', []) if info else []
             results = []
             for entry in entries:
                 if not entry:
                     continue
                 yt_id    = entry.get('id', '')
-                title    = entry.get('title', 'Unknown')
-                channel  = entry.get('channel', entry.get('uploader', 'Unknown'))
-                # Use YouTube thumbnail at good resolution
-                thumb    = f'https://i.ytimg.com/vi/{yt_id}/hqdefault.jpg' if yt_id else ''
-                duration = entry.get('duration', 0) or 0
-                # Skip anything that looks like a playlist, album, or > 10 min video
-                if duration > 600:
+                if not yt_id:
                     continue
+                title    = entry.get('title', '') or ''
+                channel  = entry.get('channel', '') or entry.get('uploader', '') or ''
+                duration = entry.get('duration', 0) or 0
+
+                # Skip very long videos (> 12 min) — likely not songs
+                if duration > 720:
+                    continue
+                # Skip obviously non-music content
+                title_lower = title.lower()
+                skip_keywords = ['podcast', 'interview', 'review', 'trailer', 'teaser', 'episode', 'vlog', 'gameplay']
+                if any(kw in title_lower for kw in skip_keywords):
+                    continue
+
+                # Clean up title — remove common suffixes like "(Official Video)", "[HD]"
+                import re as _re
+                clean_title = _re.sub(
+                    r'\s*[\(\[].*?(official|video|audio|lyric|hd|4k|full|song|music)[^\)\]]*[\)\]]\s*',
+                    '', title, flags=_re.IGNORECASE
+                ).strip() or title
+
+                thumb = f'https://i.ytimg.com/vi/{yt_id}/hqdefault.jpg'
                 results.append({
                     'id':     f'yt_{yt_id}',
-                    'title':  title,
+                    'title':  clean_title,
                     'artist': channel,
                     'image':  thumb,
                     'url':    None,
@@ -725,7 +741,8 @@ def autoplay():
     query   = get_query_for_mood(user_mood)
     results = get_cached_search(query)
     if not results:
-        results = jiosaavn_search(query)
+        # Use YouTube search for mood recommendations
+        results = youtube_search_songs(query, max_results=10)
         if results:
             set_cached_search(query, results)
 
@@ -751,7 +768,7 @@ def recommendations_queue():
     query   = get_query_for_mood(mood)
     results = get_cached_search(query)
     if not results:
-        results = jiosaavn_search(query)
+        results = youtube_search_songs(query, max_results=10)
         if results:
             set_cached_search(query, results)
 
@@ -763,6 +780,7 @@ def recommendations_queue():
 
 @app.route('/api/search', methods=['GET'])
 def search():
+    """YouTube-only search. Returns 10 results with real titles, artists, thumbnails."""
     query = request.args.get('query', '').strip()
     if not query:
         return jsonify({'success': False, 'error': 'No query provided'})
@@ -770,22 +788,9 @@ def search():
     if cached is not None:
         return jsonify({'success': True, 'data': {'results': cached}})
     try:
-        import concurrent.futures
-        # Run JioSaavn and YouTube searches in parallel
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            jio_future = executor.submit(jiosaavn_search, query)
-            yt_future  = executor.submit(youtube_search_songs, query, 5)
-            jio_songs  = jio_future.result(timeout=12)
-            yt_songs   = yt_future.result(timeout=12)
-
-        # De-duplicate: remove YouTube results whose title closely matches a JioSaavn result
-        jio_titles = {s['title'].lower().strip() for s in jio_songs}
-        yt_unique  = [s for s in yt_songs if s['title'].lower().strip() not in jio_titles]
-
-        # JioSaavn results first (higher quality), then unique YouTube extras
-        merged = jio_songs + yt_unique
-        set_cached_search(query, merged)
-        return jsonify({'success': True, 'data': {'results': merged}})
+        songs = youtube_search_songs(query, max_results=10)
+        set_cached_search(query, songs)
+        return jsonify({'success': True, 'data': {'results': songs}})
     except Exception as e:
         print(f'Search error: {e}')
         return jsonify({'success': False, 'error': str(e)})
@@ -793,13 +798,13 @@ def search():
 
 @app.route('/api/random', methods=['GET'])
 def random_song():
-    genres = ['Arijit Singh hits', 'Trending Bollywood 2024', 'AR Rahman best songs']
+    genres = ['Arijit Singh best songs', 'Trending Bollywood 2024 hits', 'AR Rahman music', 'latest hindi songs 2024']
     query  = random.choice(genres)
     cached = get_cached_search(query)
     if cached:
         return jsonify({'success': True, 'data': {'song': random.choice(cached)}})
     try:
-        songs = jiosaavn_search(query)
+        songs = youtube_search_songs(query, max_results=10)
         if not songs:
             return jsonify({'success': False, 'error': 'No tracks found'})
         set_cached_search(query, songs)
