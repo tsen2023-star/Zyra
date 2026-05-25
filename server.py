@@ -341,8 +341,6 @@ def youtube_search_songs(query: str, max_results: int = 10):
     Uses yt-dlp extract_flat for fast metadata-only search (no download)."""
     try:
         import yt_dlp
-        # Append 'audio' hint to bias toward music results
-        search_query = f"{query} song"
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
@@ -352,7 +350,7 @@ def youtube_search_songs(query: str, max_results: int = 10):
             'socket_timeout': 15,
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(search_query, download=False)
+            info = ydl.extract_info(query, download=False)  # use raw query, no suffix
             entries = info.get('entries', []) if info else []
             results = []
             for entry in entries:
@@ -756,8 +754,11 @@ def autoplay():
     query   = get_query_for_mood(user_mood)
     results = get_cached_search(query)
     if not results:
-        # Use YouTube search for mood recommendations
-        results = youtube_search_songs(query, max_results=10)
+        # JioSaavn is fast and reliable for Hindi mood queries
+        results = jiosaavn_search(query)
+        if not results:
+            # Fallback to YouTube if JioSaavn fails
+            results = youtube_search_songs(query, max_results=10)
         if results:
             set_cached_search(query, results)
 
@@ -783,12 +784,17 @@ def recommendations_queue():
     query   = get_query_for_mood(mood)
     results = get_cached_search(query)
     if not results:
-        results = youtube_search_songs(query, max_results=10)
+        # JioSaavn is fast + reliable for mood queries — powers the Up Next queue
+        results = jiosaavn_search(query)
+        if not results:
+            results = youtube_search_songs(query, max_results=10)
         if results:
             set_cached_search(query, results)
 
     filtered = [s for s in results if s['id'] not in exclude_ids]
-    queue    = random.sample(filtered, min(3, len(filtered)))
+    if not filtered:
+        filtered = results  # if all excluded, use all
+    queue = random.sample(filtered, min(3, len(filtered)))
     return jsonify({'success': True, 'queue': queue, 'mood': mood})
 
 # ─── JioSaavn Music Routes ────────────────────────────────────────────────────
