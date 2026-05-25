@@ -270,8 +270,7 @@ def upgrade_image_url(url: str) -> str:
     return re.sub(r'\d+x\d+', '500x500', url)
 
 def jiosaavn_search(query: str):
-    """Search JioSaavn using the proper search.getResults API (not autocomplete).
-    Falls back to the old autocomplete API if the proper one fails."""
+    """Search JioSaavn. Uses search.getResults (proper API) with autocomplete fallback."""
     # ── Primary: proper full-text search API ──
     try:
         resp = http_requests.get(
@@ -285,25 +284,30 @@ def jiosaavn_search(query: str):
                 '_marker': '0',
                 'ctx': 'android',
             },
-            headers=JIOSAAVN_HEADERS, timeout=10
+            headers=JIOSAAVN_HEADERS, timeout=8
         )
         data = resp.json()
-        # search.getResults returns { results: [...], total, start }
         songs_raw = data.get('results', [])
         results = []
         for song in songs_raw[:15]:
             song_id = song.get('id', '')
             if not song_id:
                 continue
-            title  = clean_html(song.get('title', 'Unknown'))
+            # NOTE: search.getResults uses 'song' not 'title' as the field name
+            title  = clean_html(
+                song.get('song', '') or
+                song.get('title', '') or 'Unknown'
+            )
             mi     = song.get('more_info', {})
             artist = clean_html(
                 mi.get('singers', '') or
                 mi.get('primary_artists', '') or
-                song.get('description', 'Unknown')
+                song.get('primary_artists', '') or
+                song.get('description', '') or 'Unknown'
             )
             image  = upgrade_image_url(song.get('image', ''))
-            results.append({'id': song_id, 'title': title, 'artist': artist, 'image': image, 'url': None, 'source': 'jiosaavn'})
+            if title and title != 'Unknown':
+                results.append({'id': song_id, 'title': title, 'artist': artist, 'image': image, 'url': None, 'source': 'jiosaavn'})
         if results:
             return results
     except Exception as e:
@@ -315,15 +319,15 @@ def jiosaavn_search(query: str):
             'https://www.jiosaavn.com/api.php',
             params={'__call': 'autocomplete.get', 'query': query,
                     '_format': 'json', '_marker': '0', 'ctx': 'android'},
-            headers=JIOSAAVN_HEADERS, timeout=10
+            headers=JIOSAAVN_HEADERS, timeout=8
         )
         data = resp.json()
         songs_raw = data.get('songs', {}).get('data', [])
         results = []
         for song in songs_raw[:10]:
             song_id = song.get('id', '')
-            title   = clean_html(song.get('title', 'Unknown'))
-            artist  = clean_html(song.get('more_info', {}).get('singers', song.get('description', 'Unknown')))
+            title   = clean_html(song.get('title', '') or song.get('song', '') or 'Unknown')
+            artist  = clean_html(song.get('more_info', {}).get('singers', '') or song.get('description', '') or 'Unknown')
             image   = upgrade_image_url(song.get('image', ''))
             results.append({'id': song_id, 'title': title, 'artist': artist, 'image': image, 'url': None, 'source': 'jiosaavn'})
         return results
@@ -700,6 +704,17 @@ def save_download(user):
     return jsonify({'success': True, 'data': {'downloads': downloads}})
 
 
+@app.route('/api/user/downloads/<song_id>', methods=['DELETE'])
+@user_required
+def delete_download(user, song_id):
+    """Remove a specific song from the user's downloads list."""
+    downloads = user.get('downloads') or []
+    downloads = [d for d in downloads if d['id'] != song_id]
+    db_update_user(user['id'], downloads=_json.dumps(downloads))
+    return jsonify({'success': True, 'data': {'downloads': downloads}})
+
+
+
 @app.route('/api/user/settings', methods=['POST'])
 @user_required
 def update_settings(user):
@@ -780,7 +795,7 @@ def recommendations_queue():
 
 @app.route('/api/search', methods=['GET'])
 def search():
-    """YouTube-only search. Returns 10 results with real titles, artists, thumbnails."""
+    """Search: tries YouTube first, falls back to JioSaavn if YouTube is unavailable."""
     query = request.args.get('query', '').strip()
     if not query:
         return jsonify({'success': False, 'error': 'No query provided'})
@@ -788,9 +803,31 @@ def search():
     if cached is not None:
         return jsonify({'success': True, 'data': {'results': cached}})
     try:
-        songs = youtube_search_songs(query, max_results=10)
-        set_cached_search(query, songs)
-        return jsonify({'success': True, 'data': {'results': songs}})
+        import concurrent.futures
+        # Try YouTube and JioSaavn in parallel, use whichever finishes with results
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            yt_future  = executor.submit(youtube_search_songs, query, 10)
+            jio_future = executor.submit(jiosaavn_search, query)
+            try:
+                yt_songs = yt_future.result(timeout=12)
+            except Exception:
+                yt_songs = []
+            try:
+                jio_songs = jio_future.result(timeout=12)
+            except Exception:
+                jio_songs = []
+
+        # Prefer YouTube results; add JioSaavn songs that aren't duplicates
+        if yt_songs:
+            yt_titles   = {s['title'].lower().strip() for s in yt_songs}
+            jio_unique  = [s for s in jio_songs if s['title'].lower().strip() not in yt_titles]
+            merged = yt_songs + jio_unique
+        else:
+            # YouTube failed — use JioSaavn only
+            merged = jio_songs
+
+        set_cached_search(query, merged)
+        return jsonify({'success': True, 'data': {'results': merged}})
     except Exception as e:
         print(f'Search error: {e}')
         return jsonify({'success': False, 'error': str(e)})
