@@ -801,7 +801,7 @@ def recommendations_queue():
 
 @app.route('/api/search', methods=['GET'])
 def search():
-    """Search: tries YouTube first, falls back to JioSaavn if YouTube is unavailable."""
+    """JioSaavn-primary search (full Bollywood catalog) + YouTube fallback for missing songs."""
     query = request.args.get('query', '').strip()
     if not query:
         return jsonify({'success': False, 'error': 'No query provided'})
@@ -810,27 +810,22 @@ def search():
         return jsonify({'success': True, 'data': {'results': cached}})
     try:
         import concurrent.futures
-        # Try YouTube and JioSaavn in parallel, use whichever finishes with results
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            yt_future  = executor.submit(youtube_search_songs, query, 10)
             jio_future = executor.submit(jiosaavn_search, query)
+            yt_future  = executor.submit(youtube_search_songs, query, 5)
+            try:
+                jio_songs = jio_future.result(timeout=10)
+            except Exception:
+                jio_songs = []
             try:
                 yt_songs = yt_future.result(timeout=12)
             except Exception:
                 yt_songs = []
-            try:
-                jio_songs = jio_future.result(timeout=12)
-            except Exception:
-                jio_songs = []
 
-        # Prefer YouTube results; add JioSaavn songs that aren't duplicates
-        if yt_songs:
-            yt_titles   = {s['title'].lower().strip() for s in yt_songs}
-            jio_unique  = [s for s in jio_songs if s['title'].lower().strip() not in yt_titles]
-            merged = yt_songs + jio_unique
-        else:
-            # YouTube failed — use JioSaavn only
-            merged = jio_songs
+        # JioSaavn results first (exact Bollywood matches), then YouTube extras
+        jio_titles = {s['title'].lower().strip() for s in jio_songs}
+        yt_unique  = [s for s in yt_songs if s['title'].lower().strip() not in jio_titles]
+        merged = jio_songs + yt_unique
 
         set_cached_search(query, merged)
         return jsonify({'success': True, 'data': {'results': merged}})
@@ -847,13 +842,72 @@ def random_song():
     if cached:
         return jsonify({'success': True, 'data': {'song': random.choice(cached)}})
     try:
-        songs = youtube_search_songs(query, max_results=10)
+        songs = jiosaavn_search(query)
+        if not songs:
+            songs = youtube_search_songs(query, max_results=10)
         if not songs:
             return jsonify({'success': False, 'error': 'No tracks found'})
         set_cached_search(query, songs)
         return jsonify({'success': True, 'data': {'song': random.choice(songs)}})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+
+
+# ─── Artist Routes ────────────────────────────────────────────────────────────
+
+TOP_BOLLYWOOD_ARTISTS = [
+    {'name': 'Arijit Singh',      'image': 'https://i.scdn.co/image/ab6761610000e5eb4293385d324db8558179afd9'},
+    {'name': 'Atif Aslam',        'image': 'https://i.scdn.co/image/ab6761610000e5eb0e93ce4c08048f68e4e6a3cb'},
+    {'name': 'AR Rahman',         'image': 'https://i.scdn.co/image/ab6761610000e5eb3e9e7e82c81f22e9e37960cb'},
+    {'name': 'Sonu Nigam',        'image': 'https://i.scdn.co/image/ab6761610000e5eba1cd34c8c6e7e13a6e87f37f'},
+    {'name': 'Shreya Ghoshal',    'image': 'https://i.scdn.co/image/ab6761610000e5ebbb22e9b57a2d7b97a4c6a5e8'},
+    {'name': 'Kumar Sanu',        'image': 'https://i.scdn.co/image/ab6761610000e5eb7b0c39e5b2b5bd0df9b5f3bc'},
+    {'name': 'Jubin Nautiyal',    'image': 'https://i.scdn.co/image/ab6761610000e5eb8b52fca1e91d60e6be9c33a8'},
+    {'name': 'Neha Kakkar',       'image': 'https://i.scdn.co/image/ab6761610000e5eb2c77a5e47e0a5c87e3ef437a'},
+    {'name': 'Udit Narayan',      'image': 'https://i.scdn.co/image/ab6761610000e5eba69a17da9e1d59a9e3b7b54e'},
+    {'name': 'Lata Mangeshkar',   'image': 'https://i.scdn.co/image/ab6761610000e5eb9b4ae3ba2fa9c5f4e0ed1f25'},
+    {'name': 'Kishore Kumar',     'image': 'https://i.scdn.co/image/ab6761610000e5ebf5e8d6d7b6fa3e5e7e1a8f3a'},
+    {'name': 'Alka Yagnik',       'image': 'https://i.scdn.co/image/ab6761610000e5eb33bef7cf3e21a7df5c17f839'},
+    {'name': 'Badshah',           'image': 'https://i.scdn.co/image/ab6761610000e5eba7af17a7e7e35d0bb6b2ec5b'},
+    {'name': 'Diljit Dosanjh',    'image': 'https://i.scdn.co/image/ab6761610000e5eb1619f6f9d27f19879d9e6fec'},
+    {'name': 'Armaan Malik',      'image': 'https://i.scdn.co/image/ab6761610000e5eb9e68c7c0c9dc9c8c5c6e7f5b'},
+    {'name': 'Mohit Chauhan',     'image': 'https://i.scdn.co/image/ab6761610000e5eb2e2e2e2e2e2e2e2e2e2e2e2e'},
+    {'name': 'Vishal Dadlani',    'image': 'https://i.scdn.co/image/ab6761610000e5eb1b1b1b1b1b1b1b1b1b1b1b1b'},
+    {'name': 'Sunidhi Chauhan',   'image': 'https://i.scdn.co/image/ab6761610000e5eb9a9a9a9a9a9a9a9a9a9a9a9a'},
+    {'name': 'Darshan Raval',     'image': 'https://i.scdn.co/image/ab6761610000e5eb5a5a5a5a5a5a5a5a5a5a5a5a'},
+    {'name': 'Yo Yo Honey Singh', 'image': 'https://i.scdn.co/image/ab6761610000e5eb3a3a3a3a3a3a3a3a3a3a3a3a'},
+]
+
+
+@app.route('/api/artists/top', methods=['GET'])
+def top_artists():
+    """Returns the predefined list of top Bollywood artists."""
+    return jsonify({'success': True, 'artists': TOP_BOLLYWOOD_ARTISTS})
+
+
+@app.route('/api/artist', methods=['GET'])
+def artist_tracks():
+    """Search JioSaavn for an artist's top songs."""
+    name = request.args.get('name', '').strip()
+    if not name:
+        return jsonify({'success': False, 'error': 'No artist name provided'})
+
+    cache_key = f'artist:{name.lower()}'
+    cached = get_cached_search(cache_key)
+    if cached is not None:
+        return jsonify({'success': True, 'artist': {'name': name}, 'tracks': cached})
+
+    # Search JioSaavn for top songs by this artist
+    songs = jiosaavn_search(f'{name} best songs')
+    if not songs:
+        songs = jiosaavn_search(name)
+    if not songs:
+        songs = youtube_search_songs(f'{name} songs', max_results=15)
+
+    if songs:
+        set_cached_search(cache_key, songs)
+
+    return jsonify({'success': True, 'artist': {'name': name}, 'tracks': songs})
 
 
 @app.route('/api/stream', methods=['GET'])
@@ -916,23 +970,32 @@ def stream_audio():
         return 'Could not resolve audio URL from JioSaavn or YouTube', 404
 
     try:
-        req = http_requests.get(audio_url, stream=True, headers={
-            'User-Agent': 'Mozilla/5.0',
-            'Range': request.headers.get('Range', 'bytes=0-'),
-        }, timeout=20)
+        # Proxy the audio stream through the server — bypasses YouTube 403 errors
+        range_header = request.headers.get('Range', 'bytes=0-')
+        proxy_headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': '*/*',
+            'Accept-Encoding': 'identity',
+        }
+        if range_header:
+            proxy_headers['Range'] = range_header
+
+        req = http_requests.get(audio_url, stream=True, headers=proxy_headers, timeout=30)
 
         def generate():
-            for chunk in req.iter_content(chunk_size=32768):
-                if chunk: yield chunk
+            for chunk in req.iter_content(chunk_size=65536):
+                if chunk:
+                    yield chunk
 
-        headers = {
-            'Content-Type': req.headers.get('Content-Type', 'audio/mpeg'),
+        resp_headers = {
+            'Content-Type':  req.headers.get('Content-Type', 'audio/mpeg'),
             'Accept-Ranges': 'bytes',
-            'X-Audio-Source': source,   # lets the frontend know where audio came from
+            'X-Audio-Source': source,
         }
-        if 'Content-Range'  in req.headers: headers['Content-Range']  = req.headers['Content-Range']
-        if 'Content-Length' in req.headers: headers['Content-Length'] = req.headers['Content-Length']
-        return Response(generate(), status=req.status_code, headers=headers)
+        if 'Content-Range'  in req.headers: resp_headers['Content-Range']  = req.headers['Content-Range']
+        if 'Content-Length' in req.headers: resp_headers['Content-Length'] = req.headers['Content-Length']
+        status = req.status_code if req.status_code in (200, 206) else 200
+        return Response(generate(), status=status, headers=resp_headers)
     except Exception as e:
         return f'Streaming error: {str(e)}', 500
 
