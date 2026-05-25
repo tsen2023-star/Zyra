@@ -419,17 +419,21 @@ export default function App() {
       setIsPlaying(true);
       setIsYoutubeFallback(usedYoutube);
 
-      // Post to history + detect mood
+      // Eagerly populate the queue immediately with current mood (don't wait for history)
+      fetchQueue(track.id, currentMood || 'default');
+
+      // Post to history + detect mood, then refresh queue with better mood
       if (userToken) {
         apiCall('/api/user/history', 'POST', { id: track.id, title: track.title, artist: track.artist, image: track.image }).then(json => {
           if (json.success) {
             const mood = json.mood || 'default';
             setCurrentMood(mood);
             setAutoplayReason('');
-            fetchQueue(track.id, mood);
+            fetchQueue(track.id, mood);   // refresh queue with detected mood
           }
         });
       }
+
 
       newSound.setOnPlaybackStatusUpdate((status: any) => {
         if (status.isLoaded) {
