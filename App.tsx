@@ -278,9 +278,44 @@ export default function App() {
       const downloadRes = await FileSystem.downloadAsync(urlToDownload, fileUri);
       const entry = { ...song, localUri: downloadRes.uri };
       const json  = await apiCall('/api/user/downloads', 'POST', entry);
-      if (json.success) { setDownloads(json.data.downloads); Alert.alert('✅ Downloaded', 'Available offline!'); }
+      if (json.success) { setDownloads(json.data.downloads); Alert.alert('\u2705 Downloaded', 'Available offline!'); }
     } catch (e) { console.error('Download error', e); Alert.alert('Error', 'Download failed.'); }
   };
+
+  const deleteDownload = async (song: any) => {
+    Alert.alert(
+      'Remove Download',
+      `Remove "${song.title}" from downloads?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove', style: 'destructive',
+          onPress: async () => {
+            try {
+              // Delete local file if it exists
+              if (song.localUri) {
+                try { await FileSystem.deleteAsync(song.localUri, { idempotent: true }); } catch {}
+              }
+              // Remove from backend
+              const json = await apiCall(`/api/user/downloads/${song.id}`, 'DELETE');
+              if (json.success) {
+                setDownloads(json.data.downloads);
+                // If currently playing this downloaded song, keep playing (stream will now use online)
+              } else {
+                // Optimistic local remove if backend fails
+                setDownloads(prev => prev.filter(d => d.id !== song.id));
+              }
+            } catch (e) {
+              console.error('Delete download error', e);
+              // Optimistic remove anyway
+              setDownloads(prev => prev.filter(d => d.id !== song.id));
+            }
+          }
+        }
+      ]
+    );
+  };
+
 
   // ─── Search ──────────────────────────────────────────────────────────────────
   const fetchLiveTracks = async (query: string) => {
@@ -704,7 +739,35 @@ export default function App() {
               </View>
             ) : (
               <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-                {downloads.map(song => renderTrackCard(song, activeTrack?.id === song.id, isTrackFavorite(song.id)))}
+                {downloads.map(song => {
+                  const isCurrent = activeTrack?.id === song.id;
+                  const isFav = isTrackFavorite(song.id);
+                  return (
+                    <TouchableOpacity key={song.id} style={[styles.trackCard, isCurrent && styles.activeTrackCard]} onPress={() => handleTrackPress(song)}>
+                      <View style={[styles.albumArtPlaceholder, { overflow: 'hidden' }]}>
+                        {song.image ? (
+                          <Image source={{ uri: song.image }} style={{ width: 48, height: 48, borderRadius: 8 }} />
+                        ) : (
+                          <Ionicons name={isCurrent && isPlaying ? 'pause' : 'disc-outline'} size={24} color={isCurrent ? '#00ffcc' : '#8e8e93'} />
+                        )}
+                      </View>
+                      <View style={styles.trackInfo}>
+                        <Text numberOfLines={1} style={[styles.trackTitle, isCurrent && { color: MOOD_COLORS[currentMood] || '#00ffcc' }]}>{song.title}</Text>
+                        <Text numberOfLines={1} style={styles.trackArtist}>{song.artist}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
+                          <Ionicons name="cloud-done" size={11} color="#00ffcc" />
+                          <Text style={{ color: '#00ffcc', fontSize: 10, marginLeft: 3 }}>Downloaded</Text>
+                        </View>
+                      </View>
+                      <TouchableOpacity onPress={() => toggleFavorite(song)} style={{ padding: 8 }}>
+                        <Ionicons name={isFav ? 'heart' : 'heart-outline'} size={22} color={isFav ? '#ff6b9d' : '#3a3a50'} />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => deleteDownload(song)} style={{ padding: 8 }}>
+                        <Ionicons name="trash-outline" size={22} color="#ff4444" />
+                      </TouchableOpacity>
+                    </TouchableOpacity>
+                  );
+                })}
               </ScrollView>
             )}
           </View>
