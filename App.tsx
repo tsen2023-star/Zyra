@@ -77,6 +77,7 @@ export default function App() {
 
   const typingTimeoutRef = useRef<any>(null);
   const playNextRef      = useRef<any>(null);
+  const autoNextRef      = useRef<any>(null);
 
   // ── Animations ──
   const ring1 = useRef(new Animated.Value(0)).current;
@@ -523,8 +524,7 @@ export default function App() {
     } catch (e) { /* silent */ }
   };
 
-  // Store autoNextRef separately so playback status update can call it
-  const autoNextRef = useRef<any>(null);
+  // Keep autoNextRef in sync so playback-end callback always calls the latest version
   autoNextRef.current = handleAutoNext;
 
   // ─── Settings sync ───────────────────────────────────────────────────────────
