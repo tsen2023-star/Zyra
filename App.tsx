@@ -69,6 +69,12 @@ export default function App() {
   const [autoplayQueue,   setAutoplayQueue]   = useState<any[]>([]);
   const [shakeEnabled,    setShakeEnabled]    = useState(false);
 
+  // ── Artists ──
+  const [topArtists,    setTopArtists]    = useState<any[]>([]);
+  const [activeArtist,  setActiveArtist]  = useState<any>(null);
+  const [artistTracks,  setArtistTracks]  = useState<any[]>([]);
+  const [artistLoading, setArtistLoading] = useState(false);
+
   // ── Modals ──
   const [isPlaylistModalVisible, setPlaylistModalVisible] = useState(false);
   const [playlistSongTarget,     setPlaylistSongTarget]   = useState<any>(null);
@@ -354,6 +360,28 @@ export default function App() {
       if (json.success) setAutoplayQueue(json.queue || []);
     } catch (e) { /* silent */ }
   };
+
+  // ─── Fetch artist top tracks ─────────────────────────────────────────────────
+  const fetchArtist = async (artist: any) => {
+    setActiveArtist(artist);
+    setArtistTracks([]);
+    setArtistLoading(true);
+    setCurrentScreen('artist_profile');
+    try {
+      const resp = await fetch(`${BACKEND_URL}/api/artist?name=${encodeURIComponent(artist.name)}`);
+      const json = await resp.json();
+      if (json.success) setArtistTracks(json.tracks || []);
+    } catch (e) { console.error('fetchArtist error', e); }
+    finally { setArtistLoading(false); }
+  };
+
+  // ─── Load top artists on mount ───────────────────────────────────────────────
+  useEffect(() => {
+    fetch(`${BACKEND_URL}/api/artists/top`)
+      .then(r => r.json())
+      .then(j => { if (j.success) setTopArtists(j.artists || []); })
+      .catch(() => {});
+  }, []);
 
   // ─── Play track ──────────────────────────────────────────────────────────────
   async function handleTrackPress(track: any) {
@@ -641,7 +669,13 @@ export default function App() {
       {/* HEADER */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>
-          {currentScreen === 'all_songs' ? 'ZYRA' : currentScreen === 'library' ? 'LIBRARY' : currentScreen === 'downloads' ? 'DOWNLOADS' : currentScreen === 'playlist_view' ? 'PLAYLIST' : 'SETTINGS'}
+          {currentScreen === 'all_songs' ? 'ZYRA'
+            : currentScreen === 'library'       ? 'LIBRARY'
+            : currentScreen === 'downloads'     ? 'DOWNLOADS'
+            : currentScreen === 'playlist_view' ? 'PLAYLIST'
+            : currentScreen === 'artists'       ? 'ARTISTS'
+            : currentScreen === 'artist_profile'? (activeArtist?.name || 'ARTIST').toUpperCase()
+            : 'SETTINGS'}
         </Text>
         {autoplayReason.length > 0 && currentScreen === 'all_songs' && (
           <Text style={[styles.autoplayBanner, { color: moodColor }]}>{autoplayReason}</Text>
@@ -691,6 +725,67 @@ export default function App() {
             <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
               {songsList.map(song => renderTrackCard(song, activeTrack?.id === song.id, isTrackFavorite(song.id)))}
             </ScrollView>
+          </View>
+        )}
+
+        {/* ARTISTS */}
+        {currentScreen === 'artists' && (
+          <View style={styles.screenBody}>
+            <Text style={styles.sectionHeader}>Top Bollywood Artists</Text>
+            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', paddingBottom: 20 }}>
+                {topArtists.map((artist, i) => (
+                  <TouchableOpacity
+                    key={i}
+                    style={{ width: '47%', marginBottom: 16, alignItems: 'center', backgroundColor: '#12122a', borderRadius: 14, padding: 14 }}
+                    onPress={() => fetchArtist(artist)}
+                  >
+                    <View style={{ width: 80, height: 80, borderRadius: 40, overflow: 'hidden', marginBottom: 10, backgroundColor: '#1a1a3e', borderWidth: 2, borderColor: '#00ffcc33' }}>
+                      {artist.image ? (
+                        <Image source={{ uri: artist.image }} style={{ width: 80, height: 80 }} defaultSource={require('./assets/icon.png')} />
+                      ) : (
+                        <View style={{ width: 80, height: 80, alignItems: 'center', justifyContent: 'center' }}>
+                          <Ionicons name="person" size={36} color="#00ffcc" />
+                        </View>
+                      )}
+                    </View>
+                    <Text numberOfLines={1} style={{ color: '#fff', fontSize: 12, fontWeight: '700', textAlign: 'center' }}>{artist.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+        )}
+
+        {/* ARTIST PROFILE */}
+        {currentScreen === 'artist_profile' && (
+          <View style={styles.screenBody}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+              <TouchableOpacity onPress={() => setCurrentScreen('artists')} style={{ paddingRight: 14 }}>
+                <Ionicons name="arrow-back" size={24} color="#fff" />
+              </TouchableOpacity>
+              {activeArtist?.image ? (
+                <Image source={{ uri: activeArtist.image }} style={{ width: 50, height: 50, borderRadius: 25, marginRight: 12 }} />
+              ) : (
+                <View style={{ width: 50, height: 50, borderRadius: 25, backgroundColor: '#1a1a3e', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                  <Ionicons name="person" size={24} color="#00ffcc" />
+                </View>
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold' }}>{activeArtist?.name}</Text>
+                <Text style={{ color: '#00ffcc', fontSize: 12 }}>{artistTracks.length} songs</Text>
+              </View>
+            </View>
+            {artistLoading ? (
+              <View style={styles.centeredBody}>
+                <ActivityIndicator color="#00ffcc" size="large" />
+                <Text style={[styles.subText, { marginTop: 12 }]}>Loading songs...</Text>
+              </View>
+            ) : (
+              <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+                {artistTracks.map(song => renderTrackCard(song, activeTrack?.id === song.id, isTrackFavorite(song.id)))}
+              </ScrollView>
+            )}
           </View>
         )}
 
@@ -864,12 +959,15 @@ export default function App() {
       {/* BOTTOM NAV */}
       <View style={styles.bottomNav}>
         {[
-          { screen: 'all_songs',   icon: 'musical-notes', label: 'Search' },
-          { screen: 'library',     icon: 'library',        label: 'Library' },
+          { screen: 'all_songs',   icon: 'musical-notes', label: 'Search'    },
+          { screen: 'artists',     icon: 'people',         label: 'Artists'   },
+          { screen: 'library',     icon: 'library',        label: 'Library'   },
           { screen: 'downloads',   icon: 'folder',         label: 'Downloads' },
-          { screen: 'settings',    icon: 'settings',       label: 'Settings' },
+          { screen: 'settings',    icon: 'settings',       label: 'Settings'  },
         ].map(tab => {
-          const active = currentScreen === tab.screen || (tab.screen === 'library' && currentScreen === 'playlist_view');
+          const active = currentScreen === tab.screen
+            || (tab.screen === 'library' && currentScreen === 'playlist_view')
+            || (tab.screen === 'artists' && currentScreen === 'artist_profile');
           return (
             <TouchableOpacity key={tab.screen} style={styles.navButton} onPress={() => setCurrentScreen(tab.screen)}>
               <Ionicons name={tab.icon as any} size={24} color={active ? moodColor : '#8e8e93'} />
