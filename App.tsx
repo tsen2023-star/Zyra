@@ -46,12 +46,13 @@ export default function App() {
 
   // ── Player ──
   const [isFullScreen, setIsFullScreen] = useState(false);
-  const [sound,        setSound]        = useState<Audio.Sound|null>(null);
-  const [activeTrack,  setActiveTrack]  = useState<any>(null);
-  const [isPlaying,    setIsPlaying]    = useState(false);
-  const [isLoading,    setIsLoading]    = useState(false);
-  const [position,     setPosition]     = useState(0);
-  const [duration,     setDuration]     = useState(0);
+  const [sound,            setSound]            = useState<Audio.Sound|null>(null);
+  const [activeTrack,      setActiveTrack]      = useState<any>(null);
+  const [isPlaying,        setIsPlaying]        = useState(false);
+  const [isLoading,        setIsLoading]        = useState(false);
+  const [position,         setPosition]         = useState(0);
+  const [duration,         setDuration]         = useState(0);
+  const [isYoutubeFallback, setIsYoutubeFallback] = useState(false);  // true when streaming via YouTube
   const progressBarWidthRef = useRef<number>(0);
 
   // ── Search ──
@@ -76,6 +77,7 @@ export default function App() {
 
   const typingTimeoutRef = useRef<any>(null);
   const playNextRef      = useRef<any>(null);
+  const autoNextRef      = useRef<any>(null);
 
   // ── Animations ──
   const ring1 = useRef(new Animated.Value(0)).current;
@@ -102,13 +104,17 @@ export default function App() {
   useEffect(() => {
     let subscription: any;
     if (shakeEnabled) {
-      Accelerometer.setUpdateInterval(500);
+      Accelerometer.setUpdateInterval(300);
       let lastShakeTime = 0;
       subscription = Accelerometer.addListener(({ x, y, z }) => {
         const acc = Math.sqrt(x*x + y*y + z*z);
-        if (acc > 2.5) {
+        if (acc > 1.8) {
           const now = Date.now();
-          if (now - lastShakeTime > 1500) { lastShakeTime = now; if (playNextRef.current) playNextRef.current(); }
+          if (now - lastShakeTime > 1000) {
+            lastShakeTime = now;
+            // Always read .current so we get the latest playNext closure
+            if (playNextRef.current) playNextRef.current();
+          }
         }
       });
     }
@@ -317,7 +323,7 @@ export default function App() {
   // ─── Play track ──────────────────────────────────────────────────────────────
   async function handleTrackPress(track: any) {
     try {
-      setIsLoading(true); setPosition(0); setDuration(0);
+      setIsLoading(true); setPosition(0); setDuration(0); setIsYoutubeFallback(false);
       if (sound) { await sound.unloadAsync(); setSound(null); }
       setActiveTrack(track);
       if (searchQuery.trim()) saveSearchHistory(searchQuery.trim());
@@ -325,29 +331,58 @@ export default function App() {
       await Audio.setAudioModeAsync({ allowsRecordingIOS: false, staysActiveInBackground: true, playsInSilentModeIOS: true, playThroughEarpieceAndroid: false });
 
       let newSound: any;
+      let usedYoutube = false;
       const downloadedTrack = downloads.find(d => d.id === track.id);
 
       if (downloadedTrack?.localUri) {
+        // ─ Tier 0: offline download ─
         const res = await Audio.Sound.createAsync({ uri: downloadedTrack.localUri }, { shouldPlay: true });
         newSound = res.sound;
+      } else if (track.id?.startsWith('yt_')) {
+        // ─ Tier YouTube: song came from YouTube search — stream directly via /api/stream with yt_ id ─
+        const titleEnc  = encodeURIComponent(track.title  || '');
+        const artistEnc = encodeURIComponent(track.artist || '');
+        const streamUrl = `${BACKEND_URL}/api/stream?id=${track.id}&title=${titleEnc}&artist=${artistEnc}`;
+        const res = await Audio.Sound.createAsync({ uri: streamUrl }, { shouldPlay: true });
+        newSound = res.sound;
+        usedYoutube = true;
       } else {
-        const streamUrl = `${BACKEND_URL}/api/stream?id=${track.id}`;
+        // ─ Tier 1: JioSaavn stream (title+artist passed so backend can auto-fallback) ─
+        const titleEnc  = encodeURIComponent(track.title  || '');
+        const artistEnc = encodeURIComponent(track.artist || '');
+        const streamUrl = `${BACKEND_URL}/api/stream?id=${track.id}&title=${titleEnc}&artist=${artistEnc}`;
         try {
           const res = await Audio.Sound.createAsync({ uri: streamUrl }, { shouldPlay: true });
           newSound = res.sound;
         } catch {
-          const refreshRes = await fetch(`${BACKEND_URL}/api/refresh?id=${track.id}`);
-          const refreshJson = await refreshRes.json();
-          if (refreshJson.success) {
-            const res = await Audio.Sound.createAsync({ uri: refreshJson.data.url }, { shouldPlay: true });
-            newSound = res.sound;
-          } else {
-            throw new Error('Could not get audio URL');
+          // ─ Tier 2: /api/refresh (clears stale JioSaavn cache and retries) ─
+          try {
+            const refreshRes  = await fetch(`${BACKEND_URL}/api/refresh?id=${track.id}`);
+            const refreshJson = await refreshRes.json();
+            if (refreshJson.success) {
+              const res = await Audio.Sound.createAsync({ uri: refreshJson.data.url }, { shouldPlay: true });
+              newSound = res.sound;
+            } else {
+              throw new Error('refresh failed');
+            }
+          } catch {
+            // ─ Tier 3: explicit YouTube fallback ─
+            const ytRes  = await fetch(`${BACKEND_URL}/api/youtube-fallback?title=${titleEnc}&artist=${artistEnc}`);
+            const ytJson = await ytRes.json();
+            if (ytJson.success && ytJson.url) {
+              const res = await Audio.Sound.createAsync({ uri: ytJson.url }, { shouldPlay: true });
+              newSound = res.sound;
+              usedYoutube = true;
+            } else {
+              throw new Error('Song unavailable on JioSaavn and YouTube');
+            }
           }
         }
       }
 
-      setSound(newSound); setIsPlaying(true);
+      setSound(newSound);
+      setIsPlaying(true);
+      setIsYoutubeFallback(usedYoutube);
 
       // Post to history + detect mood
       if (userToken) {
@@ -365,16 +400,18 @@ export default function App() {
         if (status.isLoaded) {
           setPosition(status.positionMillis);
           setDuration(status.durationMillis || 0);
-          if (status.didJustFinish && playNextRef.current) playNextRef.current();
+          // Song ended naturally → play a genre-random recommendation
+          if (status.didJustFinish && autoNextRef.current) autoNextRef.current();
         }
       });
-    } catch (e) {
+    } catch (e: any) {
       console.error('Playback error:', e);
-      Alert.alert('Playback Error', 'Could not play this song. Try again.');
+      Alert.alert('Song Unavailable', 'This song could not be played from JioSaavn or YouTube. Try another song.');
     } finally {
       setIsLoading(false);
     }
   }
+
 
   // ─── Controls ────────────────────────────────────────────────────────────────
   const togglePlayPause = async () => {
@@ -456,7 +493,39 @@ export default function App() {
     await handleTrackPress(list[Math.max(0, idx - 1)]);
   };
 
-  useEffect(() => { playNextRef.current = playNext; }, [playNext]);
+  // Assign ref in render body — always fresh, no useEffect needed
+  // This guarantees shake + playback-end callbacks always call the latest version
+  playNextRef.current = playNext;
+
+  // ─── Genre-random auto-next (called when a song ENDS naturally) ──────────────
+  const handleAutoNext = async () => {
+    if (!activeTrack) return;
+    // Always use smart autoplay for genre-random pick
+    if (smartAutoplay) {
+      try {
+        setIsLoading(true);
+        const qs  = `songId=${activeTrack.id}&userId=${userId||''}&mood=${currentMood}`;
+        const res = await fetch(`${BACKEND_URL}/api/autoplay?${qs}`);
+        const json = await res.json();
+        if (json.success) {
+          setAutoplayReason(json.reason);
+          setCurrentMood(json.mood || 'default');
+          await handleTrackPress(json.song);
+          return;
+        }
+      } catch (e) { console.error('Auto-next failed', e); }
+      finally { setIsLoading(false); }
+    }
+    // Fallback: random song
+    try {
+      const res  = await fetch(`${BACKEND_URL}/api/random`);
+      const json = await res.json();
+      if (json.success && json.data?.song) { await handleTrackPress(json.data.song); }
+    } catch (e) { /* silent */ }
+  };
+
+  // Keep autoNextRef in sync so playback-end callback always calls the latest version
+  autoNextRef.current = handleAutoNext;
 
   // ─── Settings sync ───────────────────────────────────────────────────────────
   const updateSetting = async (key: string, value: boolean) => {
@@ -700,7 +769,14 @@ export default function App() {
               <Ionicons name="musical-note" size={20} color={moodColor} style={{ marginRight: 10 }} />
             )}
             <View style={{ flex: 1 }}>
-              <Text numberOfLines={1} style={styles.miniPlayerTitle}>{activeTrack.title}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text numberOfLines={1} style={[styles.miniPlayerTitle, { flex: 1 }]}>{activeTrack.title}</Text>
+                {isYoutubeFallback && (
+                  <View style={{ backgroundColor: '#ff0000', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                    <Text style={{ color: '#fff', fontSize: 9, fontWeight: 'bold' }}>YT</Text>
+                  </View>
+                )}
+              </View>
               <Text numberOfLines={1} style={[styles.miniPlayerArtist, { color: moodColor }]}>{activeTrack.artist}</Text>
             </View>
           </View>
@@ -774,7 +850,14 @@ export default function App() {
               <Ionicons name="chevron-down" size={32} color="#fff" />
             </TouchableOpacity>
             <View style={{ alignItems: 'center' }}>
-              <Text style={styles.fullScreenHeaderText}>NOW PLAYING</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={styles.fullScreenHeaderText}>NOW PLAYING</Text>
+                {isYoutubeFallback && (
+                  <View style={{ backgroundColor: '#ff0000', borderRadius: 5, paddingHorizontal: 7, paddingVertical: 2 }}>
+                    <Text style={{ color: '#fff', fontSize: 10, fontWeight: 'bold', letterSpacing: 0.5 }}>YT</Text>
+                  </View>
+                )}
+              </View>
               {currentMood !== 'default' && (
                 <View style={[styles.moodBadge, { backgroundColor: moodColor + '22', borderColor: moodColor + '55' }]}>
                   <Text style={[styles.moodBadgeText, { color: moodColor }]}>
