@@ -110,13 +110,17 @@ export default function App() {
   useEffect(() => {
     let subscription: any;
     if (shakeEnabled) {
-      Accelerometer.setUpdateInterval(300);
+      Accelerometer.setUpdateInterval(200);
       let lastShakeTime = 0;
+      let lastAcc = 0;
       subscription = Accelerometer.addListener(({ x, y, z }) => {
-        const acc = Math.sqrt(x*x + y*y + z*z);
-        if (acc > 1.8) {
+        const acc = Math.sqrt(x * x + y * y + z * z);
+        const delta = Math.abs(acc - lastAcc);
+        lastAcc = acc;
+        // detect sudden jolt (delta > 1.0) — more reliable than raw magnitude
+        if (delta > 1.0) {
           const now = Date.now();
-          if (now - lastShakeTime > 1000) {
+          if (now - lastShakeTime > 1500) {
             lastShakeTime = now;
             // Always read .current so we get the latest playNext closure
             if (playNextRef.current) playNextRef.current();
@@ -255,13 +259,19 @@ export default function App() {
 
   // ─── Playlists ───────────────────────────────────────────────────────────────
   const createNewPlaylist = async () => {
-    if (!newPlaylistName.trim()) return;
+    const name = newPlaylistName.trim();
+    if (!name) { Alert.alert('Name required', 'Please enter a playlist name.'); return; }
+    // Duplicate name check
+    if (playlists.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+      Alert.alert('Duplicate Name', 'A playlist with this name already exists.'); return;
+    }
     try {
-      const json = await apiCall('/api/user/playlists', 'POST', { name: newPlaylistName, song: playlistSongTarget });
+      const json = await apiCall('/api/user/playlists', 'POST', { name, song: playlistSongTarget });
       if (json.success) {
         setPlaylists(json.data.playlists);
         setNewPlaylistName('');
-        if (playlistSongTarget) { setPlaylistModalVisible(false); setPlaylistSongTarget(null); Alert.alert('Created', 'Playlist created!'); }
+        if (playlistSongTarget) { setPlaylistModalVisible(false); setPlaylistSongTarget(null); Alert.alert('Created ✅', 'Playlist created & song added!'); }
+        else { Alert.alert('Created ✅', `"${name}" playlist created!`); }
       }
     } catch (e) { console.error('createPlaylist error', e); }
   };
@@ -278,14 +288,18 @@ export default function App() {
   const downloadSong = async (song: any) => {
     if (downloads.some(d => d.id === song.id)) { Alert.alert('Already Downloaded', 'This song is already saved.'); return; }
     try {
-      Alert.alert('Downloading...', 'Please wait.');
-      const fileUri = FileSystem.documentDirectory + `${song.id}.mp3`;
-      let urlToDownload = `${BACKEND_URL}/api/stream?id=${song.id}`;
+      Alert.alert('Downloading...', 'Please wait. This may take a moment.');
+      const fileUri = FileSystem.documentDirectory + `zyra_${song.id}.mp3`;
+      // Pass title+artist so backend can use yt-dlp fallback correctly
+      const titleEnc  = encodeURIComponent(song.title  || '');
+      const artistEnc = encodeURIComponent(song.artist || '');
+      const urlToDownload = `${BACKEND_URL}/api/stream?id=${song.id}&title=${titleEnc}&artist=${artistEnc}`;
       const downloadRes = await FileSystem.downloadAsync(urlToDownload, fileUri);
+      if (!downloadRes.uri) throw new Error('Download failed');
       const entry = { ...song, localUri: downloadRes.uri };
       const json  = await apiCall('/api/user/downloads', 'POST', entry);
       if (json.success) { setDownloads(json.data.downloads); Alert.alert('\u2705 Downloaded', 'Available offline!'); }
-    } catch (e) { console.error('Download error', e); Alert.alert('Error', 'Download failed.'); }
+    } catch (e) { console.error('Download error', e); Alert.alert('Error', 'Download failed. Try again.'); }
   };
 
   const deleteDownload = async (song: any) => {
@@ -391,7 +405,16 @@ export default function App() {
       setActiveTrack(track);
       if (searchQuery.trim()) saveSearchHistory(searchQuery.trim());
 
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, staysActiveInBackground: true, playsInSilentModeIOS: true, playThroughEarpieceAndroid: false });
+      // Full audio mode: background playback + earbuds + locked screen
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        staysActiveInBackground: true,
+        playsInSilentModeIOS: true,
+        playThroughEarpieceAndroid: false,
+        shouldDuckAndroid: false,
+        interruptionModeIOS: 1,    // DoNotMix
+        interruptionModeAndroid: 1, // DoNotMix
+      });
 
       let newSound: any;
       let usedYoutube = false;
@@ -402,11 +425,13 @@ export default function App() {
         const res = await Audio.Sound.createAsync({ uri: downloadedTrack.localUri }, { shouldPlay: true });
         newSound = res.sound;
       } else if (track.id?.startsWith('yt_')) {
-        // ─ Tier YouTube: song came from YouTube search — stream directly via /api/stream with yt_ id ─
         const titleEnc  = encodeURIComponent(track.title  || '');
         const artistEnc = encodeURIComponent(track.artist || '');
         const streamUrl = `${BACKEND_URL}/api/stream?id=${track.id}&title=${titleEnc}&artist=${artistEnc}`;
-        const res = await Audio.Sound.createAsync({ uri: streamUrl }, { shouldPlay: true });
+        const res = await Audio.Sound.createAsync(
+          { uri: streamUrl },
+          { shouldPlay: true, progressUpdateIntervalMillis: 500 }
+        );
         newSound = res.sound;
         usedYoutube = true;
       } else {
@@ -465,10 +490,12 @@ export default function App() {
 
       newSound.setOnPlaybackStatusUpdate((status: any) => {
         if (status.isLoaded) {
-          setPosition(status.positionMillis);
+          setPosition(status.positionMillis || 0);
           setDuration(status.durationMillis || 0);
-          // Song ended naturally → play a genre-random recommendation
-          if (status.didJustFinish && autoNextRef.current) autoNextRef.current();
+          if (status.didJustFinish) {
+            // Small delay prevents double-trigger on some devices
+            setTimeout(() => { if (autoNextRef.current) autoNextRef.current(); }, 300);
+          }
         }
       });
     } catch (e: any) {
@@ -669,11 +696,10 @@ export default function App() {
       {/* HEADER */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>
-          {currentScreen === 'all_songs' ? 'ZYRA'
+          {currentScreen === 'all_songs' ? 'HOME'
             : currentScreen === 'library'       ? 'LIBRARY'
             : currentScreen === 'downloads'     ? 'DOWNLOADS'
             : currentScreen === 'playlist_view' ? 'PLAYLIST'
-            : currentScreen === 'artists'       ? 'ARTISTS'
             : currentScreen === 'artist_profile'? (activeArtist?.name || 'ARTIST').toUpperCase()
             : 'SETTINGS'}
         </Text>
@@ -684,9 +710,9 @@ export default function App() {
 
       <View style={styles.content}>
 
-        {/* ALL SONGS / SEARCH */}
         {currentScreen === 'all_songs' && (
           <View style={styles.screenBody}>
+            {/* Search bar */}
             <View style={styles.searchBox}>
               <Ionicons name="search" size={20} color="#666" style={{ marginRight: 10 }} />
               <TextInput
@@ -703,7 +729,7 @@ export default function App() {
               ) : null}
             </View>
 
-            {/* Search history */}
+            {/* Search history dropdown */}
             {isSearchFocused && searchQuery.trim().length === 0 && searchHistory.length > 0 && (
               <View style={styles.historyDropdown}>
                 <Text style={styles.historyHeader}>Recent Searches</Text>
@@ -721,10 +747,74 @@ export default function App() {
               </View>
             )}
 
-            <Text style={styles.sectionHeader}>{searchQuery.trim().length > 0 ? 'Results' : 'Search for music'}</Text>
-            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-              {songsList.map(song => renderTrackCard(song, activeTrack?.id === song.id, isTrackFavorite(song.id)))}
-            </ScrollView>
+            {/* When searching — show results */}
+            {searchQuery.trim().length > 0 ? (
+              <>
+                <Text style={styles.sectionHeader}>Results</Text>
+                <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+                  {songsList.map(song => renderTrackCard(song, activeTrack?.id === song.id, isTrackFavorite(song.id)))}
+                </ScrollView>
+              </>
+            ) : (
+              /* Home content — genres + artists */
+              <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+                {/* Genre chips */}
+                <Text style={styles.sectionHeader}>Browse by Mood</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                  {[
+                    { label: '❤️ Romantic', mood: 'romantic', color: '#ff6b9d' },
+                    { label: '😢 Sad',      mood: 'sad',      color: '#7b9bff' },
+                    { label: '🎉 Party',    mood: 'item',     color: '#ffd700' },
+                    { label: '🎶 90s',      mood: '90s',      color: '#ff8c42' },
+                    { label: '🙏 Bhajan',   mood: 'bhajan',   color: '#b8a9ff' },
+                    { label: '⚡ Energy',   mood: 'energetic',color: '#00ffcc' },
+                  ].map(g => (
+                    <TouchableOpacity key={g.mood}
+                      style={{ backgroundColor: g.color + '22', borderWidth: 1, borderColor: g.color + '66',
+                        borderRadius: 20, paddingHorizontal: 18, paddingVertical: 10, marginRight: 10 }}
+                      onPress={() => {
+                        setCurrentMood(g.mood);
+                        setSearchQuery(g.label.split(' ').slice(1).join(' ') + ' songs');
+                      }}
+                    >
+                      <Text style={{ color: g.color, fontWeight: '700', fontSize: 13 }}>{g.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                {/* Top Artists */}
+                <Text style={styles.sectionHeader}>Top Artists</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                  {topArtists.map((artist, i) => (
+                    <TouchableOpacity key={i} style={{ alignItems: 'center', marginRight: 18, width: 80 }}
+                      onPress={() => fetchArtist(artist)}>
+                      <View style={{ width: 70, height: 70, borderRadius: 35, overflow: 'hidden',
+                        backgroundColor: '#1a1a3e', borderWidth: 2, borderColor: '#00ffcc44', marginBottom: 6 }}>
+                        {artist.image ? (
+                          <Image source={{ uri: artist.image }} style={{ width: 70, height: 70 }}
+                            defaultSource={require('./assets/icon.png')} />
+                        ) : (
+                          <View style={{ width: 70, height: 70, alignItems: 'center', justifyContent: 'center',
+                            backgroundColor: '#' + ((artist.name.charCodeAt(0) * 1234567) % 0xFFFFFF).toString(16).padStart(6,'0') + '66' }}>
+                            <Text style={{ color: '#fff', fontSize: 22, fontWeight: 'bold' }}>
+                              {artist.name.charAt(0).toUpperCase()}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text numberOfLines={2} style={{ color: '#ccc', fontSize: 11, textAlign: 'center' }}>{artist.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                {/* Trending placeholder */}
+                <Text style={styles.sectionHeader}>Trending Now 🔥</Text>
+                <View style={styles.centeredBody}>
+                  <Ionicons name="search-outline" size={48} color="#3a3a50" style={{ marginBottom: 12 }} />
+                  <Text style={styles.subText}>Search for any song above to get started</Text>
+                </View>
+              </ScrollView>
+            )}
           </View>
         )}
 
@@ -757,11 +847,11 @@ export default function App() {
           </View>
         )}
 
-        {/* ARTIST PROFILE */}
+        {/* ARTIST PROFILE (from home) */}
         {currentScreen === 'artist_profile' && (
           <View style={styles.screenBody}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-              <TouchableOpacity onPress={() => setCurrentScreen('artists')} style={{ paddingRight: 14 }}>
+              <TouchableOpacity onPress={() => setCurrentScreen('all_songs')} style={{ paddingRight: 14 }}>
                 <Ionicons name="arrow-back" size={24} color="#fff" />
               </TouchableOpacity>
               {activeArtist?.image ? (
@@ -798,9 +888,26 @@ export default function App() {
                 <Ionicons name="add" size={32} color="#00ffcc" /><Text style={styles.playlistName}>New</Text>
               </TouchableOpacity>
               {playlists.map(pl => (
-                <TouchableOpacity key={pl.id} style={styles.playlistCard} onPress={() => { setActivePlaylistId(pl.id); setCurrentScreen('playlist_view'); }}>
+                <TouchableOpacity key={pl.id} style={[styles.playlistCard, { position: 'relative' }]}
+                  onPress={() => { setActivePlaylistId(pl.id); setCurrentScreen('playlist_view'); }}
+                  onLongPress={() => {
+                    Alert.alert('Delete Playlist', `Delete "${pl.name}"? This cannot be undone.`,
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Delete', style: 'destructive', onPress: async () => {
+                          try {
+                            const json = await apiCall(`/api/user/playlists/${pl.id}`, 'DELETE');
+                            if (json.success) setPlaylists(json.data.playlists);
+                            else setPlaylists(prev => prev.filter(p => p.id !== pl.id));
+                          } catch { setPlaylists(prev => prev.filter(p => p.id !== pl.id)); }
+                        }}
+                      ]
+                    );
+                  }}
+                >
                   <Ionicons name="albums-outline" size={32} color="#fff" />
                   <Text numberOfLines={1} style={styles.playlistName}>{pl.name}</Text>
+                  <Text style={{ color: '#ff444466', fontSize: 9, marginTop: 2 }}>Hold to delete</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -959,15 +1066,14 @@ export default function App() {
       {/* BOTTOM NAV */}
       <View style={styles.bottomNav}>
         {[
-          { screen: 'all_songs',   icon: 'musical-notes', label: 'Search'    },
-          { screen: 'artists',     icon: 'people',         label: 'Artists'   },
-          { screen: 'library',     icon: 'library',        label: 'Library'   },
-          { screen: 'downloads',   icon: 'folder',         label: 'Downloads' },
-          { screen: 'settings',    icon: 'settings',       label: 'Settings'  },
+          { screen: 'all_songs',   icon: 'home',     label: 'Home'      },
+          { screen: 'library',     icon: 'library',  label: 'Library'   },
+          { screen: 'downloads',   icon: 'folder',   label: 'Downloads' },
+          { screen: 'settings',    icon: 'settings', label: 'Settings'  },
         ].map(tab => {
           const active = currentScreen === tab.screen
             || (tab.screen === 'library' && currentScreen === 'playlist_view')
-            || (tab.screen === 'artists' && currentScreen === 'artist_profile');
+            || (tab.screen === 'all_songs' && currentScreen === 'artist_profile');
           return (
             <TouchableOpacity key={tab.screen} style={styles.navButton} onPress={() => setCurrentScreen(tab.screen)}>
               <Ionicons name={tab.icon as any} size={24} color={active ? moodColor : '#8e8e93'} />
