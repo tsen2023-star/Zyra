@@ -336,60 +336,94 @@ def jiosaavn_search(query: str):
         return []
 
 
-def youtube_search_songs(query: str, max_results: int = 10):
-    """Search YouTube for songs. Returns list of song dicts with yt_ prefixed IDs.
-    Uses yt-dlp extract_flat for fast metadata-only search (no download)."""
+def youtube_search_songs(query: str, max_results: int = 15):
+    """Search YouTube Music for songs — returns exact Bollywood matches with clean metadata."""
+    import re as _re
     try:
         import yt_dlp
+        # Search YouTube Music specifically for much better song matching
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,
             'extract_flat': True,
-            'default_search': f'ytsearch{max_results}',
-            'socket_timeout': 15,
+            'default_search': f'https://music.youtube.com/search?q=',
+            'socket_timeout': 20,
         }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(query, download=False)  # use raw query, no suffix
-            entries = info.get('entries', []) if info else []
-            results = []
-            for entry in entries:
-                if not entry:
-                    continue
-                yt_id    = entry.get('id', '')
-                if not yt_id:
-                    continue
-                title    = entry.get('title', '') or ''
-                channel  = entry.get('channel', '') or entry.get('uploader', '') or ''
-                duration = entry.get('duration', 0) or 0
+        # Try YouTube Music search first, fall back to regular YouTube
+        search_queries = [
+            f'https://music.youtube.com/search?q={query}',  # YT Music
+            f'ytsearch{max_results}:{query}',                # Regular YT fallback
+        ]
+        entries = []
+        for sq in search_queries:
+            try:
+                flat_opts = {
+                    'quiet': True, 'no_warnings': True, 'noplaylist': True,
+                    'extract_flat': True, 'socket_timeout': 20,
+                }
+                with yt_dlp.YoutubeDL(flat_opts) as ydl:
+                    info = ydl.extract_info(sq if 'ytsearch' in sq else f'ytsearch{max_results}:{query}', download=False)
+                    entries = (info.get('entries', []) or []) if info else []
+                    if entries:
+                        break
+            except Exception:
+                continue
 
-                # Skip very long videos (> 12 min) — likely not songs
-                if duration > 720:
-                    continue
-                # Skip obviously non-music content
-                title_lower = title.lower()
-                skip_keywords = ['podcast', 'interview', 'review', 'trailer', 'teaser', 'episode', 'vlog', 'gameplay']
-                if any(kw in title_lower for kw in skip_keywords):
-                    continue
+        results = []
+        seen_titles = set()
+        for entry in entries:
+            if not entry:
+                continue
+            yt_id    = entry.get('id', '')
+            if not yt_id:
+                continue
+            title    = entry.get('title', '') or ''
+            channel  = entry.get('channel', '') or entry.get('uploader', '') or ''
+            duration = entry.get('duration', 0) or 0
 
-                # Clean up title — remove common suffixes like "(Official Video)", "[HD]"
-                import re as _re
-                clean_title = _re.sub(
-                    r'\s*[\(\[].*?(official|video|audio|lyric|hd|4k|full|song|music)[^\)\]]*[\)\]]\s*',
-                    '', title, flags=_re.IGNORECASE
-                ).strip() or title
+            # Skip very long videos (> 10 min) or very short (< 30s)
+            if duration > 600 or (duration > 0 and duration < 30):
+                continue
 
-                thumb = f'https://i.ytimg.com/vi/{yt_id}/hqdefault.jpg'
-                results.append({
-                    'id':     f'yt_{yt_id}',
-                    'title':  clean_title,
-                    'artist': channel,
-                    'image':  thumb,
-                    'url':    None,
-                    'source': 'youtube',
-                    'yt_id':  yt_id,
-                })
-            return results
+            # Skip non-music content
+            title_lower = title.lower()
+            skip_kw = ['podcast', 'interview', 'review', 'trailer', 'teaser', 'episode',
+                       'vlog', 'gameplay', 'reaction', 'tutorial', 'news', 'comedy']
+            if any(kw in title_lower for kw in skip_kw):
+                continue
+
+            # Clean title — strip (Official Video), [HD], | T-Series etc.
+            clean_title = _re.sub(
+                r'\s*[\(\[].*?(?:official|video|audio|lyric|hd|4k|full|song|music|ft\.|feat\.)[^\)\]]*[\)\]]\s*',
+                '', title, flags=_re.IGNORECASE
+            ).strip()
+            clean_title = _re.sub(r'\s*\|.*$', '', clean_title).strip()  # remove " | T-Series" suffix
+            clean_title = clean_title or title
+
+            # Clean artist name — remove "- Topic" suffix from YouTube Music auto-generated channels
+            clean_artist = _re.sub(r'\s*-\s*Topic$', '', channel, flags=_re.IGNORECASE).strip()
+            clean_artist = clean_artist or channel
+
+            # Deduplicate by title
+            title_key = clean_title.lower().strip()
+            if title_key in seen_titles:
+                continue
+            seen_titles.add(title_key)
+
+            thumb = f'https://i.ytimg.com/vi/{yt_id}/hqdefault.jpg'
+            results.append({
+                'id':     f'yt_{yt_id}',
+                'title':  clean_title,
+                'artist': clean_artist,
+                'image':  thumb,
+                'url':    None,
+                'source': 'youtube',
+                'yt_id':  yt_id,
+            })
+            if len(results) >= max_results:
+                break
+        return results
     except Exception as e:
         print(f'YouTube search error: {e}')
         return []
@@ -811,7 +845,7 @@ def recommendations_queue():
 
 @app.route('/api/search', methods=['GET'])
 def search():
-    """JioSaavn-primary search (full Bollywood catalog) + YouTube fallback for missing songs."""
+    """YouTube-only search via yt-dlp — always playable, exact song matches."""
     query = request.args.get('query', '').strip()
     if not query:
         return jsonify({'success': False, 'error': 'No query provided'})
@@ -819,26 +853,11 @@ def search():
     if cached is not None:
         return jsonify({'success': True, 'data': {'results': cached}})
     try:
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            jio_future = executor.submit(jiosaavn_search, query)
-            yt_future  = executor.submit(youtube_search_songs, query, 5)
-            try:
-                jio_songs = jio_future.result(timeout=10)
-            except Exception:
-                jio_songs = []
-            try:
-                yt_songs = yt_future.result(timeout=12)
-            except Exception:
-                yt_songs = []
-
-        # JioSaavn results first (exact Bollywood matches), then YouTube extras
-        jio_titles = {s['title'].lower().strip() for s in jio_songs}
-        yt_unique  = [s for s in yt_songs if s['title'].lower().strip() not in jio_titles]
-        merged = jio_songs + yt_unique
-
-        set_cached_search(query, merged)
-        return jsonify({'success': True, 'data': {'results': merged}})
+        results = youtube_search_songs(query, max_results=15)
+        if not results:
+            return jsonify({'success': True, 'data': {'results': []}})
+        set_cached_search(query, results)
+        return jsonify({'success': True, 'data': {'results': results}})
     except Exception as e:
         print(f'Search error: {e}')
         return jsonify({'success': False, 'error': str(e)})
