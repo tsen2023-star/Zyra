@@ -6,7 +6,7 @@ Zyra Backend — Flask server with:
   • Smart mood-based autoplay recommendations
 """
 
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, redirect
 from flask_cors import CORS
 import requests as http_requests
 import random, time, os, re, html, jwt, hashlib, uuid
@@ -106,10 +106,48 @@ init_db()
 
 SEARCH_CACHE_TTL  = 300
 URL_CACHE_TTL     = 780
-YT_URL_CACHE_TTL  = 300   # YouTube URLs expire after ~6h; we refresh after 5 min to be safe
+YT_URL_CACHE_TTL  = 1800  # 30 min — Invidious itags don’t expire
 search_cache  = {}
 url_cache     = {}
 yt_url_cache  = {}         # keyed by "title|artist"
+_artist_img_cache: dict = {}  # keyed by artist name
+
+# ─── Invidious instances (public YouTube proxy) ───────────────────────────────
+INVIDIOUS_INSTANCES = [
+    'https://invidious.kavin.rocks',
+    'https://inv.riverside.rocks',
+    'https://invidious.privacydev.net',
+    'https://yt.cdaut.de',
+]
+_invidious_itag_cache: dict = {}  # video_id → {instance, itag, ts}
+
+def get_invidious_audio(video_id: str):
+    """Return (instance_base, itag) from Invidious API. Prefers m4a audio."""
+    cached = _invidious_itag_cache.get(video_id)
+    if cached and time.time() - cached['ts'] < 3600:
+        return cached['instance'], cached['itag']
+    for base in INVIDIOUS_INSTANCES:
+        try:
+            r = http_requests.get(
+                f'{base}/api/v1/videos/{video_id}',
+                params={'fields': 'adaptiveFormats'},
+                timeout=10
+            )
+            if r.status_code != 200:
+                continue
+            formats = r.json().get('adaptiveFormats', [])
+            # Prefer m4a (mp4 audio) for maximum Android compatibility
+            m4a = [f for f in formats if f.get('type', '').startswith('audio/mp4')]
+            webm = [f for f in formats if f.get('type', '').startswith('audio/webm')]
+            pool = m4a or webm or []
+            if pool:
+                best = sorted(pool, key=lambda x: int(x.get('bitrate', 0)), reverse=True)[0]
+                itag = best.get('itag')
+                _invidious_itag_cache[video_id] = {'instance': base, 'itag': itag, 'ts': time.time()}
+                return base, itag
+        except Exception:
+            continue
+    return None, None
 
 def get_cached_search(query):
     item = search_cache.get(query)
@@ -910,26 +948,29 @@ TOP_BOLLYWOOD_ARTISTS = [
 
 @app.route('/api/artists/top', methods=['GET'])
 def top_artists():
-    """Returns top Bollywood artists with real photos from iTunes API."""
-    import requests as _req
+    """Returns top Bollywood artists with real photos from Deezer API (cached)."""
     artists_out = []
     for a in TOP_BOLLYWOOD_ARTISTS:
-        img = a.get('image', '')
-        # Try iTunes Search API for a reliable, always-accessible artist photo
+        name = a['name']
+        # Use memory cache to avoid repeated API calls
+        cached_img = _artist_img_cache.get(name.lower())
+        if cached_img is not None:
+            artists_out.append({'name': name, 'image': cached_img})
+            continue
+        img = ''
         try:
-            r = _req.get(
-                'https://itunes.apple.com/search',
-                params={'term': a['name'], 'entity': 'musicArtist', 'limit': 1},
-                timeout=5
+            r = http_requests.get(
+                'https://api.deezer.com/search/artist',
+                params={'q': name, 'limit': 1},
+                timeout=6
             )
-            results = r.json().get('results', [])
-            if results:
-                art = results[0].get('artworkUrl100', '')
-                if art:
-                    img = art.replace('100x100', '600x600')  # upscale to hi-res
+            data = r.json().get('data', [])
+            if data:
+                img = data[0].get('picture_big', data[0].get('picture_medium', ''))
         except Exception:
-            pass  # keep original/placeholder if iTunes fails
-        artists_out.append({'name': a['name'], 'image': img})
+            pass
+        _artist_img_cache[name.lower()] = img
+        artists_out.append({'name': name, 'image': img})
     return jsonify({'success': True, 'artists': artists_out})
 
 
@@ -987,39 +1028,50 @@ def stream_audio():
     audio_url = ''
     source    = 'jiosaavn'
 
-    # Songs sourced from YouTube search have a 'yt_' prefix — go straight to yt-dlp
+    # Songs sourced from YouTube search have a 'yt_' prefix — use Invidious first, yt-dlp fallback
     if song_id.startswith('yt_'):
         yt_id = song_id[3:]  # strip the 'yt_' prefix to get the real YouTube video ID
-        print(f'Direct YouTube stream for video ID: {yt_id}')
-        # Use title|artist key for cache; fall back to video URL if title missing
+        print(f'Stream request for YouTube video ID: {yt_id}')
+
+        # ── Primary: Invidious public proxy (fresh URL every time, no expiry issues) ──
+        instance, itag = get_invidious_audio(yt_id)
+        if instance and itag:
+            proxy_url = f'{instance}/latest_version?id={yt_id}&itag={itag}&local=true'
+            print(f'Redirecting to Invidious: {proxy_url}')
+            return redirect(proxy_url, code=302)
+
+        # ── Fallback: yt-dlp direct extraction ──
         cache_key = f'{title.lower().strip()}|{artist.lower().strip()}' if title else yt_id
         audio_url = get_cached_yt_url(cache_key)
         if not audio_url:
             try:
                 import yt_dlp
                 ydl_opts = {
-                    'format': 'bestaudio/best',
+                    'format': 'bestaudio[ext=m4a]/bestaudio[acodec=mp4a]/bestaudio/best',
                     'quiet': True,
                     'no_warnings': True,
                     'noplaylist': True,
                     'extract_flat': False,
                     'skip_download': True,
-                    'socket_timeout': 15,
+                    'socket_timeout': 20,
                 }
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(f'https://www.youtube.com/watch?v={yt_id}', download=False)
                     if info:
                         formats = info.get('formats', [])
+                        # Prefer m4a audio
+                        m4a_audio = [f for f in formats if f.get('vcodec') == 'none' and f.get('ext') == 'm4a']
                         audio_only = [f for f in formats if f.get('vcodec') == 'none' and f.get('acodec') != 'none']
-                        if audio_only:
-                            best = max(audio_only, key=lambda f: f.get('abr') or f.get('tbr') or 0)
+                        pool = m4a_audio or audio_only
+                        if pool:
+                            best = max(pool, key=lambda f: f.get('abr') or f.get('tbr') or 0)
                             audio_url = best.get('url', '')
                         if not audio_url:
                             audio_url = info.get('url', '')
                         if audio_url:
                             set_cached_yt_url(cache_key, audio_url)
             except Exception as e:
-                print(f'Direct YouTube stream error: {e}')
+                print(f'yt-dlp extraction error: {e}')
         source = 'youtube'
     else:
         # 1️⃣  Try JioSaavn first
