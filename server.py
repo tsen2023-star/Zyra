@@ -652,6 +652,16 @@ def add_to_playlist(user, playlist_id):
     return jsonify({'success': True, 'data': {'playlists': playlists}})
 
 
+@app.route('/api/user/playlists/<playlist_id>', methods=['DELETE'])
+@user_required
+def delete_playlist(user, playlist_id):
+    """Delete a playlist by its ID."""
+    playlists = user.get('playlists') or []
+    playlists = [p for p in playlists if p['id'] != playlist_id]
+    db_update_user(user['id'], playlists=_json.dumps(playlists))
+    return jsonify({'success': True, 'data': {'playlists': playlists}})
+
+
 @app.route('/api/user/history', methods=['GET'])
 @user_required
 def get_history(user):
@@ -856,26 +866,26 @@ def random_song():
 # ─── Artist Routes ────────────────────────────────────────────────────────────
 
 TOP_BOLLYWOOD_ARTISTS = [
-    {'name': 'Arijit Singh',      'image': 'https://i.scdn.co/image/ab6761610000e5eb4293385d324db8558179afd9'},
-    {'name': 'Atif Aslam',        'image': 'https://i.scdn.co/image/ab6761610000e5eb0e93ce4c08048f68e4e6a3cb'},
-    {'name': 'AR Rahman',         'image': 'https://i.scdn.co/image/ab6761610000e5eb3e9e7e82c81f22e9e37960cb'},
-    {'name': 'Sonu Nigam',        'image': 'https://i.scdn.co/image/ab6761610000e5eba1cd34c8c6e7e13a6e87f37f'},
-    {'name': 'Shreya Ghoshal',    'image': 'https://i.scdn.co/image/ab6761610000e5ebbb22e9b57a2d7b97a4c6a5e8'},
-    {'name': 'Kumar Sanu',        'image': 'https://i.scdn.co/image/ab6761610000e5eb7b0c39e5b2b5bd0df9b5f3bc'},
-    {'name': 'Jubin Nautiyal',    'image': 'https://i.scdn.co/image/ab6761610000e5eb8b52fca1e91d60e6be9c33a8'},
-    {'name': 'Neha Kakkar',       'image': 'https://i.scdn.co/image/ab6761610000e5eb2c77a5e47e0a5c87e3ef437a'},
-    {'name': 'Udit Narayan',      'image': 'https://i.scdn.co/image/ab6761610000e5eba69a17da9e1d59a9e3b7b54e'},
-    {'name': 'Lata Mangeshkar',   'image': 'https://i.scdn.co/image/ab6761610000e5eb9b4ae3ba2fa9c5f4e0ed1f25'},
-    {'name': 'Kishore Kumar',     'image': 'https://i.scdn.co/image/ab6761610000e5ebf5e8d6d7b6fa3e5e7e1a8f3a'},
-    {'name': 'Alka Yagnik',       'image': 'https://i.scdn.co/image/ab6761610000e5eb33bef7cf3e21a7df5c17f839'},
-    {'name': 'Badshah',           'image': 'https://i.scdn.co/image/ab6761610000e5eba7af17a7e7e35d0bb6b2ec5b'},
-    {'name': 'Diljit Dosanjh',    'image': 'https://i.scdn.co/image/ab6761610000e5eb1619f6f9d27f19879d9e6fec'},
-    {'name': 'Armaan Malik',      'image': 'https://i.scdn.co/image/ab6761610000e5eb9e68c7c0c9dc9c8c5c6e7f5b'},
-    {'name': 'Mohit Chauhan',     'image': 'https://i.scdn.co/image/ab6761610000e5eb2e2e2e2e2e2e2e2e2e2e2e2e'},
-    {'name': 'Vishal Dadlani',    'image': 'https://i.scdn.co/image/ab6761610000e5eb1b1b1b1b1b1b1b1b1b1b1b1b'},
-    {'name': 'Sunidhi Chauhan',   'image': 'https://i.scdn.co/image/ab6761610000e5eb9a9a9a9a9a9a9a9a9a9a9a9a'},
-    {'name': 'Darshan Raval',     'image': 'https://i.scdn.co/image/ab6761610000e5eb5a5a5a5a5a5a5a5a5a5a5a5a'},
-    {'name': 'Yo Yo Honey Singh', 'image': 'https://i.scdn.co/image/ab6761610000e5eb3a3a3a3a3a3a3a3a3a3a3a3a'},
+    {'name': 'Arijit Singh',      'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0b/Arijit_Singh_at_the_IIFA_Awards_%282019%29.jpg/440px-Arijit_Singh_at_the_IIFA_Awards_%282019%29.jpg'},
+    {'name': 'Atif Aslam',        'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c9/Atif_Aslam_in_2020.jpg/440px-Atif_Aslam_in_2020.jpg'},
+    {'name': 'AR Rahman',         'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/A_R_Rahman_in_2018.jpg/440px-A_R_Rahman_in_2018.jpg'},
+    {'name': 'Sonu Nigam',        'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/90/Sonu_Nigam_-_Dhaka%2C_2012.jpg/440px-Sonu_Nigam_-_Dhaka%2C_2012.jpg'},
+    {'name': 'Shreya Ghoshal',    'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/Shreya_Ghoshal_in_2018_%28cropped%29.jpg/440px-Shreya_Ghoshal_in_2018_%28cropped%29.jpg'},
+    {'name': 'Kumar Sanu',        'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f5/Kumar_Sanu.jpg/440px-Kumar_Sanu.jpg'},
+    {'name': 'Jubin Nautiyal',    'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Jubin_Nautiyal_at_Filmfare_2020.jpg/440px-Jubin_Nautiyal_at_Filmfare_2020.jpg'},
+    {'name': 'Neha Kakkar',       'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f7/Neha_Kakkar_2019.jpg/440px-Neha_Kakkar_2019.jpg'},
+    {'name': 'Udit Narayan',      'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c2/Udit_narayan.jpg/440px-Udit_narayan.jpg'},
+    {'name': 'Lata Mangeshkar',   'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/Lata_Mangeshkar_in_2019.jpg/440px-Lata_Mangeshkar_in_2019.jpg'},
+    {'name': 'Kishore Kumar',     'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8b/Kishore_Kumar_1985.jpg/440px-Kishore_Kumar_1985.jpg'},
+    {'name': 'Alka Yagnik',       'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/19/Alka_Yagnik.jpg/440px-Alka_Yagnik.jpg'},
+    {'name': 'Badshah',           'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Badshah_at_Global_Citizen_Festival_2016.jpg/440px-Badshah_at_Global_Citizen_Festival_2016.jpg'},
+    {'name': 'Diljit Dosanjh',    'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Diljit_Dosanjh_2019.jpg/440px-Diljit_Dosanjh_2019.jpg'},
+    {'name': 'Armaan Malik',      'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8b/Armaan_Malik_in_2017.jpg/440px-Armaan_Malik_in_2017.jpg'},
+    {'name': 'Mohit Chauhan',     'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5f/Mohit_Chauhan.jpg/440px-Mohit_Chauhan.jpg'},
+    {'name': 'Vishal Dadlani',    'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e5/Vishal_Dadlani_at_Sa_Re_Ga_Ma_Pa.jpg/440px-Vishal_Dadlani_at_Sa_Re_Ga_Ma_Pa.jpg'},
+    {'name': 'Sunidhi Chauhan',   'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Sunidhi_Chauhan.jpg/440px-Sunidhi_Chauhan.jpg'},
+    {'name': 'Darshan Raval',     'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a0/Darshan_Raval_2019.jpg/440px-Darshan_Raval_2019.jpg'},
+    {'name': 'Yo Yo Honey Singh', 'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a1/Honey_Singh_at_BIG_Star_Entertainment_Awards.jpg/440px-Honey_Singh_at_BIG_Star_Entertainment_Awards.jpg'},
 ]
 
 
