@@ -74,6 +74,11 @@ export default function App() {
   const [activeArtist,  setActiveArtist]  = useState<any>(null);
   const [artistTracks,  setArtistTracks]  = useState<any[]>([]);
   const [artistLoading, setArtistLoading] = useState(false);
+  const [isArtistMode,  setIsArtistMode]  = useState(false);
+  const artistPlayedRef = useRef<Set<string>>(new Set());
+
+  // ── Theme ──
+  const [isDarkMode, setIsDarkMode] = useState(true);
 
   // ── Modals ──
   const [isPlaylistModalVisible, setPlaylistModalVisible] = useState(false);
@@ -380,6 +385,8 @@ export default function App() {
     setActiveArtist(artist);
     setArtistTracks([]);
     setArtistLoading(true);
+    setIsArtistMode(true);
+    artistPlayedRef.current = new Set(); // reset played set for new artist
     setCurrentScreen('artist_profile');
     try {
       const resp = await fetch(`${BACKEND_URL}/api/artist?name=${encodeURIComponent(artist.name)}`);
@@ -621,25 +628,34 @@ export default function App() {
   // Keep autoNextRef in sync so playback-end callback always calls the latest version
   autoNextRef.current = handleAutoNext;
 
-  // ─── Settings sync ───────────────────────────────────────────────────────────
-  const updateSetting = async (key: string, value: boolean) => {
-    try { await apiCall('/api/user/settings', 'POST', { [key]: value }); }
-    catch (e) { /* silent */ }
+  // ─── Theme ───────────────────────────────────────────────────────────────────
+  const theme = {
+    bg:      isDarkMode ? '#05050f' : '#f0f0fa',
+    card:    isDarkMode ? '#0b0b18' : '#ffffff',
+    surface: isDarkMode ? '#121225' : '#e8e8f8',
+    header:  isDarkMode ? '#050515' : '#e0e0f5',
+    text:    isDarkMode ? '#ffffff' : '#111133',
+    subtext: isDarkMode ? '#8e8e93' : '#555577',
+    border:  isDarkMode ? '#121225' : '#d0d0e8',
+    input:   isDarkMode ? '#121225' : '#eaeaf8',
+    navBg:   isDarkMode ? '#050515' : '#e0e0f5',
+    miniPlayerBg: isDarkMode ? '#0a1622' : '#dde8f5',
   };
 
   // ─── Track card render ───────────────────────────────────────────────────────
   const renderTrackCard = (song: any, isCurrent: boolean, isFav: boolean) => (
-    <TouchableOpacity key={song.id} style={[styles.trackCard, isCurrent && styles.activeTrackCard]} onPress={() => handleTrackPress(song)}>
-      <View style={[styles.albumArtPlaceholder, { overflow: 'hidden' }]}>
+    <TouchableOpacity key={song.id} style={[styles.trackCard, { backgroundColor: theme.card, borderColor: isCurrent ? moodColor + '44' : 'transparent' }]} onPress={() => handleTrackPress(song)}>
+      {/* Circular album art */}
+      <View style={{ width: 48, height: 48, borderRadius: 24, overflow: 'hidden', backgroundColor: theme.surface, justifyContent: 'center', alignItems: 'center', marginRight: 15 }}>
         {song.image ? (
-          <Image source={{ uri: song.image }} style={{ width: 48, height: 48, borderRadius: 8 }} />
+          <Image source={{ uri: song.image }} style={{ width: 48, height: 48, borderRadius: 24 }} />
         ) : (
-          <Ionicons name={isCurrent && isPlaying ? 'pause' : 'disc-outline'} size={24} color={isCurrent ? '#00ffcc' : '#8e8e93'} />
+          <Ionicons name={isCurrent && isPlaying ? 'pause' : 'disc-outline'} size={24} color={isCurrent ? moodColor : '#8e8e93'} />
         )}
       </View>
       <View style={styles.trackInfo}>
-        <Text numberOfLines={1} style={[styles.trackTitle, isCurrent && { color: MOOD_COLORS[currentMood] || '#00ffcc' }]}>{song.title}</Text>
-        <Text numberOfLines={1} style={styles.trackArtist}>{song.artist}</Text>
+        <Text numberOfLines={1} style={[styles.trackTitle, { color: isCurrent ? moodColor : theme.text }]}>{song.title}</Text>
+        <Text numberOfLines={1} style={[styles.trackArtist, { color: theme.subtext }]}>{song.artist}</Text>
       </View>
       <TouchableOpacity onPress={() => toggleFavorite(song)} style={{ padding: 8 }}>
         <Ionicons name={isFav ? 'heart' : 'heart-outline'} size={22} color={isFav ? '#ff6b9d' : '#3a3a50'} />
@@ -648,7 +664,7 @@ export default function App() {
         <Ionicons name="add-circle-outline" size={22} color="#8e8e93" />
       </TouchableOpacity>
       <TouchableOpacity onPress={() => downloadSong(song)} style={{ padding: 8 }}>
-        <Ionicons name={downloads.some(d => d.id === song.id) ? 'cloud-done' : 'cloud-download-outline'} size={22} color={downloads.some(d => d.id === song.id) ? '#00ffcc' : '#8e8e93'} />
+        <Ionicons name={downloads.some(d => d.id === song.id) ? 'cloud-done' : 'cloud-download-outline'} size={22} color={downloads.some(d => d.id === song.id) ? moodColor : '#8e8e93'} />
       </TouchableOpacity>
     </TouchableOpacity>
   );
@@ -690,19 +706,21 @@ export default function App() {
   const moodColor = MOOD_COLORS[currentMood] || '#00ffcc';
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
+      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} backgroundColor={theme.header} />
 
-      {/* HEADER */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>
-          {currentScreen === 'all_songs' ? 'HOME'
-            : currentScreen === 'library'       ? 'LIBRARY'
-            : currentScreen === 'downloads'     ? 'DOWNLOADS'
-            : currentScreen === 'playlist_view' ? 'PLAYLIST'
-            : currentScreen === 'artist_profile'? (activeArtist?.name || 'ARTIST').toUpperCase()
-            : 'SETTINGS'}
-        </Text>
+      {/* HEADER — pill/capsule design */}
+      <View style={[styles.header, { backgroundColor: theme.header }]}>
+        <View style={[styles.headerPill, { backgroundColor: moodColor + '18', borderColor: moodColor + '44' }]}>
+          <Text style={[styles.headerTitle, { color: isDarkMode ? '#fff' : theme.text }]}>
+            {currentScreen === 'all_songs' ? 'HOME'
+              : currentScreen === 'library'       ? 'LIBRARY'
+              : currentScreen === 'downloads'     ? 'DOWNLOADS'
+              : currentScreen === 'playlist_view' ? 'PLAYLIST'
+              : currentScreen === 'artist_profile'? (activeArtist?.name || 'ARTIST').toUpperCase()
+              : 'SETTINGS'}
+          </Text>
+        </View>
         {autoplayReason.length > 0 && currentScreen === 'all_songs' && (
           <Text style={[styles.autoplayBanner, { color: moodColor }]}>{autoplayReason}</Text>
         )}
@@ -758,54 +776,64 @@ export default function App() {
             ) : (
               /* Home content — genres + artists */
               <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-                {/* Genre chips */}
-                <Text style={styles.sectionHeader}>Browse by Mood</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                {/* Browse by Mood — 3-col 2-row grid */}
+                <Text style={[styles.sectionHeader, { color: theme.subtext }]}>Browse by Mood</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
                   {[
-                    { label: '❤️ Romantic', mood: 'romantic', color: '#ff6b9d' },
-                    { label: '😢 Sad',      mood: 'sad',      color: '#7b9bff' },
-                    { label: '🎉 Party',    mood: 'item',     color: '#ffd700' },
-                    { label: '🎶 90s',      mood: '90s',      color: '#ff8c42' },
-                    { label: '🙏 Bhajan',   mood: 'bhajan',   color: '#b8a9ff' },
-                    { label: '⚡ Energy',   mood: 'energetic',color: '#00ffcc' },
+                    { label: '\u2764\ufe0f Romantic', mood: 'romantic', color: '#d41051' },
+                    { label: '\ud83d\ude22 Sad',      mood: 'sad',      color: '#502db0' },
+                    { label: '\ud83c\udf89 Party',    mood: 'item',     color: '#ff1900' },
+                    { label: '\ud83c\udfb6 90s',      mood: '90s',      color: '#d55e14' },
+                    { label: '\ud83d\ude4f Bhajan',   mood: 'bhajan',   color: '#e51ae8' },
+                    { label: '\u26a1 Energy',         mood: 'energetic',color: '#4000ff' },
                   ].map(g => (
                     <TouchableOpacity key={g.mood}
-                      style={{ backgroundColor: g.color + '22', borderWidth: 1, borderColor: g.color + '66',
-                        borderRadius: 20, paddingHorizontal: 18, paddingVertical: 10, marginRight: 10 }}
+                      style={{ width: '31%', backgroundColor: g.color + '22', borderWidth: 1.5,
+                        borderColor: g.color + '88', borderRadius: 14, paddingVertical: 14,
+                        alignItems: 'center', justifyContent: 'center' }}
                       onPress={() => {
                         setCurrentMood(g.mood);
                         setSearchQuery(g.label.split(' ').slice(1).join(' ') + ' songs');
                       }}
                     >
-                      <Text style={{ color: g.color, fontWeight: '700', fontSize: 13 }}>{g.label}</Text>
+                      <Text style={{ fontSize: 22, marginBottom: 4 }}>{g.label.split(' ')[0]}</Text>
+                      <Text style={{ color: g.color, fontWeight: '700', fontSize: 12 }}>
+                        {g.label.split(' ').slice(1).join(' ')}
+                      </Text>
                     </TouchableOpacity>
                   ))}
-                </ScrollView>
+                </View>
 
-                {/* Top Artists */}
-                <Text style={styles.sectionHeader}>Top Artists</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                {/* Top Artists — 2-col vertical grid */}
+                <Text style={[styles.sectionHeader, { color: theme.subtext }]}>Top Artists</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 20 }}>
                   {topArtists.map((artist, i) => (
-                    <TouchableOpacity key={i} style={{ alignItems: 'center', marginRight: 18, width: 80 }}
+                    <TouchableOpacity key={i}
+                      style={{ width: '48%', backgroundColor: theme.card, borderRadius: 14,
+                        padding: 12, marginBottom: 12, alignItems: 'center', borderWidth: 1,
+                        borderColor: theme.border }}
                       onPress={() => fetchArtist(artist)}>
-                      <View style={{ width: 70, height: 70, borderRadius: 35, overflow: 'hidden',
-                        backgroundColor: '#1a1a3e', borderWidth: 2, borderColor: '#00ffcc44', marginBottom: 6 }}>
+                      {/* Circular artist image */}
+                      <View style={{ width: 72, height: 72, borderRadius: 36, overflow: 'hidden',
+                        backgroundColor: theme.surface, borderWidth: 2.5, borderColor: moodColor + '55', marginBottom: 8 }}>
                         {artist.image ? (
-                          <Image source={{ uri: artist.image }} style={{ width: 70, height: 70 }}
+                          <Image source={{ uri: artist.image }} style={{ width: 72, height: 72, borderRadius: 36 }}
                             defaultSource={require('./assets/icon.png')} />
                         ) : (
-                          <View style={{ width: 70, height: 70, alignItems: 'center', justifyContent: 'center',
-                            backgroundColor: '#' + ((artist.name.charCodeAt(0) * 1234567) % 0xFFFFFF).toString(16).padStart(6,'0') + '66' }}>
-                            <Text style={{ color: '#fff', fontSize: 22, fontWeight: 'bold' }}>
+                          <View style={{ width: 72, height: 72, borderRadius: 36, alignItems: 'center',
+                            justifyContent: 'center', backgroundColor: moodColor + '33' }}>
+                            <Text style={{ color: '#fff', fontSize: 26, fontWeight: 'bold' }}>
                               {artist.name.charAt(0).toUpperCase()}
                             </Text>
                           </View>
                         )}
                       </View>
-                      <Text numberOfLines={2} style={{ color: '#ccc', fontSize: 11, textAlign: 'center' }}>{artist.name}</Text>
+                      <Text numberOfLines={1} style={{ color: theme.text, fontSize: 12, fontWeight: '700', textAlign: 'center' }}>
+                        {artist.name}
+                      </Text>
                     </TouchableOpacity>
                   ))}
-                </ScrollView>
+                </View>
 
                 {/* Trending placeholder */}
                 <Text style={styles.sectionHeader}>Trending Now 🔥</Text>
@@ -994,29 +1022,39 @@ export default function App() {
                 </TouchableOpacity>
               </View>
 
-              {/* Smart Autoplay toggle */}
-              <View style={[styles.settingRow, { marginBottom: 15 }]}>
+              {/* Dark / Light mode toggle */}
+              <View style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1 }]}>
                 <View style={styles.textGroup}>
-                  <Text style={styles.settingTitle}>🤖 Smart Auto-Play</Text>
-                  <Text style={styles.settingDesc}>Plays songs based on your current mood automatically</Text>
+                  <Text style={[styles.settingTitle, { color: theme.text }]}>{isDarkMode ? '🌙 Dark Mode' : '☀️ Light Mode'}</Text>
+                  <Text style={[styles.settingDesc, { color: theme.subtext }]}>{isDarkMode ? 'Switch to light theme' : 'Switch to dark theme'}</Text>
+                </View>
+                <Switch value={isDarkMode} onValueChange={setIsDarkMode}
+                  trackColor={{ false: '#ccc', true: moodColor }} thumbColor="#ffffff" />
+              </View>
+
+              {/* Smart Autoplay toggle */}
+              <View style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card }]}>
+                <View style={styles.textGroup}>
+                  <Text style={[styles.settingTitle, { color: theme.text }]}>🤖 Smart Auto-Play</Text>
+                  <Text style={[styles.settingDesc, { color: theme.subtext }]}>Plays songs based on your current mood automatically</Text>
                 </View>
                 <Switch value={smartAutoplay} onValueChange={(v) => { setSmartAutoplay(v); updateSetting('smart_autoplay', v); }}
-                  trackColor={{ false: '#252545', true: '#00ffcc' }} thumbColor="#ffffff" />
+                  trackColor={{ false: '#252545', true: moodColor }} thumbColor="#ffffff" />
               </View>
 
               {/* Shake toggle */}
-              <View style={[styles.settingRow, { marginBottom: 15 }]}>
+              <View style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card }]}>
                 <View style={styles.textGroup}>
-                  <Text style={styles.settingTitle}>📳 Shake to Skip</Text>
-                  <Text style={styles.settingDesc}>Shake your phone to skip to the next song</Text>
+                  <Text style={[styles.settingTitle, { color: theme.text }]}>📳 Shake to Skip</Text>
+                  <Text style={[styles.settingDesc, { color: theme.subtext }]}>Shake your phone to skip to the next song</Text>
                 </View>
                 <Switch value={shakeEnabled} onValueChange={(v) => { setShakeEnabled(v); updateSetting('shake_enabled', v); }}
-                  trackColor={{ false: '#252545', true: '#00ffcc' }} thumbColor="#ffffff" />
+                  trackColor={{ false: '#252545', true: moodColor }} thumbColor="#ffffff" />
               </View>
 
               {/* Stats */}
-              <View style={[styles.settingRow, { marginBottom: 15, flexDirection: 'column', alignItems: 'flex-start' }]}>
-                <Text style={[styles.settingTitle, { marginBottom: 15 }]}>📊 Your Stats</Text>
+              <View style={[styles.settingRow, { marginBottom: 15, flexDirection: 'column', alignItems: 'flex-start', backgroundColor: theme.card }]}>
+                <Text style={[styles.settingTitle, { marginBottom: 15, color: theme.text }]}>📊 Your Stats</Text>
                 <View style={{ flexDirection: 'row', gap: 20, flexWrap: 'wrap' }}>
                   <View style={styles.statBadge}><Text style={styles.statNumber}>{favorites.length}</Text><Text style={styles.statLabel}>Favorites</Text></View>
                   <View style={styles.statBadge}><Text style={styles.statNumber}>{playlists.length}</Text><Text style={styles.statLabel}>Playlists</Text></View>
@@ -1030,41 +1068,36 @@ export default function App() {
 
       {/* MINI PLAYER */}
       {activeTrack && (
-        <TouchableOpacity style={[styles.miniPlayer, { borderTopColor: moodColor + '44' }]} activeOpacity={0.9} onPress={() => setIsFullScreen(true)}>
+        <TouchableOpacity style={[styles.miniPlayer, { backgroundColor: theme.miniPlayerBg, borderTopColor: moodColor + '44' }]} activeOpacity={0.9} onPress={() => setIsFullScreen(true)}>
           <View style={styles.miniPlayerLeft}>
             {activeTrack.image ? (
-              <Image source={{ uri: activeTrack.image }} style={{ width: 38, height: 38, borderRadius: 6, marginRight: 10 }} />
+              <Image source={{ uri: activeTrack.image }} style={{ width: 38, height: 38, borderRadius: 19, marginRight: 10 }} />
             ) : (
               <Ionicons name="musical-note" size={20} color={moodColor} style={{ marginRight: 10 }} />
             )}
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text numberOfLines={1} style={[styles.miniPlayerTitle, { flex: 1 }]}>{activeTrack.title}</Text>
-                {isYoutubeFallback && (
-                  <View style={{ backgroundColor: '#ff0000', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
-                    <Text style={{ color: '#fff', fontSize: 9, fontWeight: 'bold' }}>YT</Text>
-                  </View>
-                )}
+                <Text numberOfLines={1} style={[styles.miniPlayerTitle, { flex: 1, color: theme.text }]}>{activeTrack.title}</Text>
               </View>
               <Text numberOfLines={1} style={[styles.miniPlayerArtist, { color: moodColor }]}>{activeTrack.artist}</Text>
             </View>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <TouchableOpacity onPress={playPrevious}>
-              <Ionicons name="play-skip-back" size={22} color="#fff" />
+              <Ionicons name="play-skip-back" size={22} color={theme.text} />
             </TouchableOpacity>
             <TouchableOpacity onPress={togglePlayPause} style={[styles.miniPlayerPlayBtn, { backgroundColor: moodColor }]}>
               {isLoading ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name={isPlaying ? 'pause' : 'play'} size={22} color="#050515" />}
             </TouchableOpacity>
             <TouchableOpacity onPress={playNext}>
-              <Ionicons name="play-skip-forward" size={22} color="#fff" />
+              <Ionicons name="play-skip-forward" size={22} color={theme.text} />
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
       )}
 
       {/* BOTTOM NAV */}
-      <View style={styles.bottomNav}>
+      <View style={[styles.bottomNav, { backgroundColor: theme.navBg, borderTopColor: theme.border }]}>
         {[
           { screen: 'all_songs',   icon: 'home',     label: 'Home'      },
           { screen: 'library',     icon: 'library',  label: 'Library'   },
@@ -1076,12 +1109,11 @@ export default function App() {
             || (tab.screen === 'all_songs' && currentScreen === 'artist_profile');
           return (
             <TouchableOpacity key={tab.screen} style={styles.navButton} onPress={() => {
-              // Tapping Home while search is active → clear search and return to home page
-              if (tab.screen === 'all_songs') setSearchQuery('');
+              if (tab.screen === 'all_songs') { setSearchQuery(''); setIsArtistMode(false); }
               setCurrentScreen(tab.screen);
             }}>
-              <Ionicons name={tab.icon as any} size={24} color={active ? moodColor : '#8e8e93'} />
-              <Text style={[styles.navText, { color: active ? moodColor : '#8e8e93' }]}>{tab.label}</Text>
+              <Ionicons name={tab.icon as any} size={24} color={active ? moodColor : theme.subtext} />
+              <Text style={[styles.navText, { color: active ? moodColor : theme.subtext }]}>{tab.label}</Text>
             </TouchableOpacity>
           );
         })}
@@ -1253,8 +1285,9 @@ export default function App() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container:   { flex: 1, backgroundColor: '#05050f' },
-  header:      { backgroundColor: '#050515', paddingTop: 50, paddingBottom: 10, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: '#121225' },
-  headerTitle: { color: '#ffffff', fontSize: 18, fontWeight: 'bold', letterSpacing: 2 },
+  header:      { backgroundColor: '#050515', paddingTop: 50, paddingBottom: 12, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: '#121225' },
+  headerPill:  { paddingHorizontal: 24, paddingVertical: 8, borderRadius: 30, borderWidth: 1.5, alignItems: 'center' },
+  headerTitle: { color: '#ffffff', fontSize: 15, fontWeight: 'bold', letterSpacing: 2 },
   autoplayBanner: { fontSize: 11, marginTop: 4, fontWeight: '600' },
   content:     { flex: 1 },
   screenBody:  { flex: 1, padding: 20 },
