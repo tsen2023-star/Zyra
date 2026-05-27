@@ -14,12 +14,12 @@ const BACKEND_URL = 'https://zyra-backend-9nvt.onrender.com';
 
 // ─── Mood Colours ─────────────────────────────────────────────────────────────
 const MOOD_COLORS: Record<string, string> = {
-  romantic:  '#ff6b9d',
-  sad:       '#7b9bff',
-  item:      '#ffd700',
-  '90s':     '#ff8c42',
-  bhajan:    '#b8a9ff',
-  energetic: '#00ffcc',
+  romantic:  '#d41051',
+  sad:       '#502db0',
+  item:      '#ff1900',
+  '90s':     '#d55e14',
+  bhajan:    '#e51ae8',
+  energetic: '#4000ff',
   default:   '#00ffcc',
 };
 
@@ -1075,7 +1075,11 @@ export default function App() {
             || (tab.screen === 'library' && currentScreen === 'playlist_view')
             || (tab.screen === 'all_songs' && currentScreen === 'artist_profile');
           return (
-            <TouchableOpacity key={tab.screen} style={styles.navButton} onPress={() => setCurrentScreen(tab.screen)}>
+            <TouchableOpacity key={tab.screen} style={styles.navButton} onPress={() => {
+              // Tapping Home while search is active → clear search and return to home page
+              if (tab.screen === 'all_songs') setSearchQuery('');
+              setCurrentScreen(tab.screen);
+            }}>
               <Ionicons name={tab.icon as any} size={24} color={active ? moodColor : '#8e8e93'} />
               <Text style={[styles.navText, { color: active ? moodColor : '#8e8e93' }]}>{tab.label}</Text>
             </TouchableOpacity>
