@@ -910,13 +910,32 @@ TOP_BOLLYWOOD_ARTISTS = [
 
 @app.route('/api/artists/top', methods=['GET'])
 def top_artists():
-    """Returns the predefined list of top Bollywood artists."""
-    return jsonify({'success': True, 'artists': TOP_BOLLYWOOD_ARTISTS})
+    """Returns top Bollywood artists with real photos from iTunes API."""
+    import requests as _req
+    artists_out = []
+    for a in TOP_BOLLYWOOD_ARTISTS:
+        img = a.get('image', '')
+        # Try iTunes Search API for a reliable, always-accessible artist photo
+        try:
+            r = _req.get(
+                'https://itunes.apple.com/search',
+                params={'term': a['name'], 'entity': 'musicArtist', 'limit': 1},
+                timeout=5
+            )
+            results = r.json().get('results', [])
+            if results:
+                art = results[0].get('artworkUrl100', '')
+                if art:
+                    img = art.replace('100x100', '600x600')  # upscale to hi-res
+        except Exception:
+            pass  # keep original/placeholder if iTunes fails
+        artists_out.append({'name': a['name'], 'image': img})
+    return jsonify({'success': True, 'artists': artists_out})
 
 
 @app.route('/api/artist', methods=['GET'])
 def artist_tracks():
-    """Search JioSaavn for an artist's top songs."""
+    """Get 50 unique songs by artist from YouTube — deduplicated, no repeats."""
     name = request.args.get('name', '').strip()
     if not name:
         return jsonify({'success': False, 'error': 'No artist name provided'})
@@ -926,17 +945,35 @@ def artist_tracks():
     if cached is not None:
         return jsonify({'success': True, 'artist': {'name': name}, 'tracks': cached})
 
-    # Search JioSaavn for top songs by this artist
-    songs = jiosaavn_search(f'{name} best songs')
-    if not songs:
-        songs = jiosaavn_search(name)
-    if not songs:
-        songs = youtube_search_songs(f'{name} songs', max_results=15)
+    # Run multiple focused queries to gather 50 diverse songs
+    queries = [
+        f'{name} best songs',
+        f'{name} top hits',
+        f'{name} popular songs',
+        f'{name} audio songs',
+        f'{name} all songs',
+    ]
+    seen_titles: set = set()
+    all_songs: list = []
 
-    if songs:
-        set_cached_search(cache_key, songs)
+    for q in queries:
+        if len(all_songs) >= 50:
+            break
+        batch = youtube_search_songs(q, max_results=15)
+        for song in batch:
+            t_key = song.get('title', '').lower().strip()
+            if t_key and t_key not in seen_titles:
+                seen_titles.add(t_key)
+                # Correct the artist name since YT channel names differ
+                song['artist'] = name
+                all_songs.append(song)
+            if len(all_songs) >= 50:
+                break
 
-    return jsonify({'success': True, 'artist': {'name': name}, 'tracks': songs})
+    if all_songs:
+        set_cached_search(cache_key, all_songs)
+
+    return jsonify({'success': True, 'artist': {'name': name}, 'tracks': all_songs})
 
 
 @app.route('/api/stream', methods=['GET'])
