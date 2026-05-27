@@ -645,10 +645,10 @@ export default function App() {
   // ─── Track card render ───────────────────────────────────────────────────────
   const renderTrackCard = (song: any, isCurrent: boolean, isFav: boolean) => (
     <TouchableOpacity key={song.id} style={[styles.trackCard, { backgroundColor: theme.card, borderColor: isCurrent ? moodColor + '44' : 'transparent' }]} onPress={() => handleTrackPress(song)}>
-      {/* Circular album art */}
+      {/* Circular album art — overflow:hidden on View clips the Image to a circle on Android */}
       <View style={{ width: 48, height: 48, borderRadius: 24, overflow: 'hidden', backgroundColor: theme.surface, justifyContent: 'center', alignItems: 'center', marginRight: 15 }}>
         {song.image ? (
-          <Image source={{ uri: song.image }} style={{ width: 48, height: 48, borderRadius: 24 }} />
+          <Image source={{ uri: song.image }} style={{ width: 48, height: 48 }} />
         ) : (
           <Ionicons name={isCurrent && isPlaying ? 'pause' : 'disc-outline'} size={24} color={isCurrent ? moodColor : '#8e8e93'} />
         )}
@@ -977,20 +977,21 @@ export default function App() {
                   const isCurrent = activeTrack?.id === song.id;
                   const isFav = isTrackFavorite(song.id);
                   return (
-                    <TouchableOpacity key={song.id} style={[styles.trackCard, isCurrent && styles.activeTrackCard]} onPress={() => handleTrackPress(song)}>
-                      <View style={[styles.albumArtPlaceholder, { overflow: 'hidden' }]}>
+                    <TouchableOpacity key={song.id} style={[styles.trackCard, { backgroundColor: theme.card, borderColor: isCurrent ? moodColor + '44' : 'transparent' }]} onPress={() => handleTrackPress(song)}>
+                      {/* Circular album art */}
+                      <View style={{ width: 48, height: 48, borderRadius: 24, overflow: 'hidden', backgroundColor: theme.surface, justifyContent: 'center', alignItems: 'center', marginRight: 15 }}>
                         {song.image ? (
-                          <Image source={{ uri: song.image }} style={{ width: 48, height: 48, borderRadius: 8 }} />
+                          <Image source={{ uri: song.image }} style={{ width: 48, height: 48 }} />
                         ) : (
-                          <Ionicons name={isCurrent && isPlaying ? 'pause' : 'disc-outline'} size={24} color={isCurrent ? '#00ffcc' : '#8e8e93'} />
+                          <Ionicons name={isCurrent && isPlaying ? 'pause' : 'disc-outline'} size={24} color={isCurrent ? moodColor : '#8e8e93'} />
                         )}
                       </View>
                       <View style={styles.trackInfo}>
-                        <Text numberOfLines={1} style={[styles.trackTitle, isCurrent && { color: MOOD_COLORS[currentMood] || '#00ffcc' }]}>{song.title}</Text>
-                        <Text numberOfLines={1} style={styles.trackArtist}>{song.artist}</Text>
+                        <Text numberOfLines={1} style={[styles.trackTitle, { color: isCurrent ? moodColor : theme.text }]}>{song.title}</Text>
+                        <Text numberOfLines={1} style={[styles.trackArtist, { color: theme.subtext }]}>{song.artist}</Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
-                          <Ionicons name="cloud-done" size={11} color="#00ffcc" />
-                          <Text style={{ color: '#00ffcc', fontSize: 10, marginLeft: 3 }}>Downloaded</Text>
+                          <Ionicons name="cloud-done" size={11} color={moodColor} />
+                          <Text style={{ color: moodColor, fontSize: 10, marginLeft: 3 }}>Downloaded</Text>
                         </View>
                       </View>
                       <TouchableOpacity onPress={() => toggleFavorite(song)} style={{ padding: 8 }}>
