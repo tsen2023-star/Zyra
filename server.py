@@ -883,7 +883,7 @@ def recommendations_queue():
 
 @app.route('/api/search', methods=['GET'])
 def search():
-    """YouTube-only search via yt-dlp — always playable, exact song matches."""
+    """Search songs via JioSaavn (primary) with YouTube fallback."""
     query = request.args.get('query', '').strip()
     if not query:
         return jsonify({'success': False, 'error': 'No query provided'})
@@ -891,10 +891,13 @@ def search():
     if cached is not None:
         return jsonify({'success': True, 'data': {'results': cached}})
     try:
-        results = youtube_search_songs(query, max_results=15)
+        # ── Primary: JioSaavn ──
+        results = jiosaavn_search(query)
         if not results:
-            return jsonify({'success': True, 'data': {'results': []}})
-        set_cached_search(query, results)
+            # ── Fallback: YouTube ──
+            results = youtube_search_songs(query, max_results=15)
+        if results:
+            set_cached_search(query, results)
         return jsonify({'success': True, 'data': {'results': results}})
     except Exception as e:
         print(f'Search error: {e}')
@@ -976,7 +979,7 @@ def top_artists():
 
 @app.route('/api/artist', methods=['GET'])
 def artist_tracks():
-    """Get 50 unique songs by artist from YouTube — deduplicated, no repeats."""
+    """Get 50 unique songs by artist — JioSaavn primary, YouTube fallback."""
     name = request.args.get('name', '').strip()
     if not name:
         return jsonify({'success': False, 'error': 'No artist name provided'})
@@ -986,30 +989,49 @@ def artist_tracks():
     if cached is not None:
         return jsonify({'success': True, 'artist': {'name': name}, 'tracks': cached})
 
-    # Run multiple focused queries to gather 50 diverse songs
-    queries = [
-        f'{name} best songs',
-        f'{name} top hits',
-        f'{name} popular songs',
-        f'{name} audio songs',
-        f'{name} all songs',
-    ]
     seen_titles: set = set()
     all_songs: list = []
 
-    for q in queries:
+    # ── JioSaavn: multiple queries to get 50 unique songs ──
+    js_queries = [
+        f'{name} best songs',
+        f'{name} top hits',
+        f'{name} popular songs',
+        f'{name} new songs',
+        f'{name} hits',
+    ]
+    for q in js_queries:
         if len(all_songs) >= 50:
             break
-        batch = youtube_search_songs(q, max_results=15)
+        batch = jiosaavn_search(q)
         for song in batch:
             t_key = song.get('title', '').lower().strip()
             if t_key and t_key not in seen_titles:
                 seen_titles.add(t_key)
-                # Correct the artist name since YT channel names differ
-                song['artist'] = name
+                song['artist'] = name  # normalize artist name
                 all_songs.append(song)
             if len(all_songs) >= 50:
                 break
+
+    # ── YouTube fallback if JioSaavn returned very few ──
+    if len(all_songs) < 10:
+        yt_queries = [
+            f'{name} best songs',
+            f'{name} top hits',
+            f'{name} popular songs',
+        ]
+        for q in yt_queries:
+            if len(all_songs) >= 50:
+                break
+            batch = youtube_search_songs(q, max_results=15)
+            for song in batch:
+                t_key = song.get('title', '').lower().strip()
+                if t_key and t_key not in seen_titles:
+                    seen_titles.add(t_key)
+                    song['artist'] = name
+                    all_songs.append(song)
+                if len(all_songs) >= 50:
+                    break
 
     if all_songs:
         set_cached_search(cache_key, all_songs)
