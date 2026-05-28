@@ -1,35 +1,34 @@
 /**
  * Custom Expo config plugin for react-native-track-player.
- * Adds the required AndroidManifest.xml entries for the RNTP foreground service
- * (HeadlessJsMediaService + MediaBrowserService + MediaButtonReceiver).
+ * Adds the required AndroidManifest.xml entries for RNTP's MusicService foreground service.
+ *
+ * Correct class: com.doublesymmetry.trackplayer.service.MusicService
+ * (verified from node_modules/react-native-track-player/android source)
  */
 const { withAndroidManifest } = require('@expo/config-plugins');
 
 module.exports = function withTrackPlayer(config) {
   return withAndroidManifest(config, async (cfg) => {
-    const manifest   = cfg.modResults;
-    const app        = manifest.manifest.application[0];
+    const manifest = cfg.modResults;
+    const app      = manifest.manifest.application[0];
 
-    // ── Service: HeadlessJsMediaService ─────────────────────────────────────
+    // ── Service: MusicService (the actual RNTP foreground service class) ──────
     if (!app.service) app.service = [];
 
     const serviceExists = app.service.some(
-      s => s.$?.['android:name'] === 'com.doublesymmetry.trackplayer.service.HeadlessJsMediaService'
+      s => s.$?.['android:name'] === 'com.doublesymmetry.trackplayer.service.MusicService'
     );
     if (!serviceExists) {
       app.service.push({
         $: {
-          'android:name':                'com.doublesymmetry.trackplayer.service.HeadlessJsMediaService',
-          'android:exported':            'false',
+          'android:name':                  'com.doublesymmetry.trackplayer.service.MusicService',
+          'android:exported':              'false',
           'android:foregroundServiceType': 'mediaPlayback',
         },
-        'intent-filter': [{
-          action: [{ $: { 'android:name': 'android.media.browse.MediaBrowserService' } }],
-        }],
       });
     }
 
-    // ── Receiver: MediaButtonReceiver ────────────────────────────────────────
+    // ── Receiver: MediaButtonReceiver (handles earbud/Bluetooth media buttons) ─
     if (!app.receiver) app.receiver = [];
 
     const receiverExists = app.receiver.some(

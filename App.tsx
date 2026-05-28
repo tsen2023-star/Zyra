@@ -105,9 +105,9 @@ export default function App() {
     currentMood: 'default',
     downloads:   [] as any[],
   });
-  // ── Navigation refs (for BackHandler — avoids stale closures) ──
-  const currentScreenRef = useRef('all_songs');
-  const isFullScreenRef  = useRef(false);
+  // Refs for BackHandler — avoids stale closure issues with deps array
+  const screenRef     = useRef('all_songs');
+  const fullScreenRef = useRef(false);
 
   // ── Animations ──
   const ring1 = useRef(new Animated.Value(0)).current;
@@ -184,13 +184,12 @@ export default function App() {
 
   // ─── RNTP player setup ───────────────────────────────────────────────────────
   useEffect(() => {
-    let mounted = true;
     (async () => {
       try {
         await TrackPlayer.setupPlayer({
-          minBuffer:  3,   // seconds to buffer before playback starts
-          maxBuffer:  30,  // max seconds buffered ahead
-          playBuffer: 1,   // seconds needed to resume after stall
+          minBuffer:  3,
+          maxBuffer:  30,
+          playBuffer: 1,
         });
         await TrackPlayer.updateOptions({
           capabilities: [
@@ -198,32 +197,28 @@ export default function App() {
             Capability.SkipToNext, Capability.SkipToPrevious,
             Capability.Stop, Capability.SeekTo,
           ],
-          // notificationCapabilities controls the Android media notification buttons
-          // — required for earbuds, Bluetooth, and lock-screen controls to work
+          // compactCapabilities = the 3 buttons shown in collapsed notification
+          compactCapabilities: [Capability.SkipToPrevious, Capability.Play, Capability.SkipToNext],
+          // notificationCapabilities = buttons visible on lock screen / expanded notification
           notificationCapabilities: [
             Capability.Play, Capability.Pause,
             Capability.SkipToNext, Capability.SkipToPrevious,
             Capability.Stop,
           ],
-          compactCapabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext],
           progressUpdateEventInterval: 1,
-          color: 0x00ffcc, // Zyra accent colour in notification bar
           android: {
             appKilledPlaybackBehavior: AppKilledPlaybackBehavior.StopPlaybackAndRemoveNotification,
           },
         });
-      } catch (e) {
-        // setupPlayer throws if already initialized (e.g., dev hot reload) — safe to ignore
+      } catch {
+        // setupPlayer throws if already initialized (dev hot reload) — safe to ignore
       }
     })();
-    return () => { mounted = false; };
   }, []);
 
   // ─── Sync state refs so native event callbacks always have fresh values ───────
   useEffect(() => {
-    queueCtxRef.current     = { activeTrack, userId, userToken, currentMood, downloads };
-    currentScreenRef.current = currentScreen;
-    isFullScreenRef.current  = isFullScreen;
+    queueCtxRef.current = { activeTrack, userId, userToken, currentMood, downloads };
   });
 
   // ─── RNTP track-changed event — update active track when queue auto-advances ──
@@ -257,34 +252,31 @@ export default function App() {
     prefillQueue();
   });
 
+  // ─── Keep BackHandler refs in sync with state ────────────────────────────────
+  useEffect(() => { screenRef.current     = currentScreen; }, [currentScreen]);
+  useEffect(() => { fullScreenRef.current = isFullScreen;  }, [isFullScreen]);
+
   // ─── Android hardware back button ────────────────────────────────────────────
-  // Uses refs so the handler never captures stale navigation state.
-  // Priority order: fullscreen → sub-section → home (minimize)
+  // Using refs (not state deps) prevents stale-closure issues where the old
+  // handler fires before React re-registers the new one.
   useEffect(() => {
     const onBack = (): boolean => {
-      // 1. Close fullscreen player
-      if (isFullScreenRef.current) {
+      // 1. Close full-screen player → return to current section
+      if (fullScreenRef.current) {
         setIsFullScreen(false);
         return true;
       }
-      // 2. Navigate from any sub-section → Home tab
-      const screen = currentScreenRef.current;
-      if (
-        screen === 'library'        ||
-        screen === 'downloads'      ||
-        screen === 'settings'       ||
-        screen === 'artist_profile' ||
-        screen === 'playlist_view'
-      ) {
+      // 2. Any sub-section (artist, library, downloads, playlist) → go to Home tab
+      if (screenRef.current !== 'all_songs') {
         setCurrentScreen('all_songs');
         return true;
       }
-      // 3. Already on Home → let system minimize the app
+      // 3. Already on Home → let Android minimize the app
       return false;
     };
     const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
     return () => sub.remove();
-  }, []); // ← empty deps: register once, refs provide fresh values
+  }, []); // empty deps — refs provide fresh values without re-registration
 
   // ─── Search debounce ─────────────────────────────────────────────────────────
   useEffect(() => {
