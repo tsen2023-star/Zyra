@@ -105,6 +105,9 @@ export default function App() {
     currentMood: 'default',
     downloads:   [] as any[],
   });
+  // ── Navigation refs (for BackHandler — avoids stale closures) ──
+  const currentScreenRef = useRef('all_songs');
+  const isFullScreenRef  = useRef(false);
 
   // ── Animations ──
   const ring1 = useRef(new Animated.Value(0)).current;
@@ -195,8 +198,16 @@ export default function App() {
             Capability.SkipToNext, Capability.SkipToPrevious,
             Capability.Stop, Capability.SeekTo,
           ],
+          // notificationCapabilities controls the Android media notification buttons
+          // — required for earbuds, Bluetooth, and lock-screen controls to work
+          notificationCapabilities: [
+            Capability.Play, Capability.Pause,
+            Capability.SkipToNext, Capability.SkipToPrevious,
+            Capability.Stop,
+          ],
           compactCapabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext],
           progressUpdateEventInterval: 1,
+          color: 0x00ffcc, // Zyra accent colour in notification bar
           android: {
             appKilledPlaybackBehavior: AppKilledPlaybackBehavior.StopPlaybackAndRemoveNotification,
           },
@@ -210,7 +221,9 @@ export default function App() {
 
   // ─── Sync state refs so native event callbacks always have fresh values ───────
   useEffect(() => {
-    queueCtxRef.current = { activeTrack, userId, userToken, currentMood, downloads };
+    queueCtxRef.current     = { activeTrack, userId, userToken, currentMood, downloads };
+    currentScreenRef.current = currentScreen;
+    isFullScreenRef.current  = isFullScreen;
   });
 
   // ─── RNTP track-changed event — update active track when queue auto-advances ──
@@ -245,15 +258,33 @@ export default function App() {
   });
 
   // ─── Android hardware back button ────────────────────────────────────────────
+  // Uses refs so the handler never captures stale navigation state.
+  // Priority order: fullscreen → sub-section → home (minimize)
   useEffect(() => {
-    const onBack = () => {
-      if (isFullScreen) { setIsFullScreen(false); return true; }
-      if (currentScreen !== 'all_songs') { setCurrentScreen('all_songs'); return true; }
-      return false; // let system handle → minimizes app
+    const onBack = (): boolean => {
+      // 1. Close fullscreen player
+      if (isFullScreenRef.current) {
+        setIsFullScreen(false);
+        return true;
+      }
+      // 2. Navigate from any sub-section → Home tab
+      const screen = currentScreenRef.current;
+      if (
+        screen === 'library'        ||
+        screen === 'downloads'      ||
+        screen === 'settings'       ||
+        screen === 'artist_profile' ||
+        screen === 'playlist_view'
+      ) {
+        setCurrentScreen('all_songs');
+        return true;
+      }
+      // 3. Already on Home → let system minimize the app
+      return false;
     };
     const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
     return () => sub.remove();
-  }, [isFullScreen, currentScreen]);
+  }, []); // ← empty deps: register once, refs provide fresh values
 
   // ─── Search debounce ─────────────────────────────────────────────────────────
   useEffect(() => {
