@@ -1287,6 +1287,46 @@ def stream_audio():
         return f'Streaming error: {str(e)}', 500
 
 
+@app.route('/api/stream_url', methods=['GET'])
+def get_stream_url_only():
+    """
+    Returns the resolved direct audio URL as JSON — NO proxying.
+    The app uses this to get the CDN URL and pass it directly to RNTP,
+    eliminating the backend proxy hop and cutting playback start time from ~15s to ~2s.
+    """
+    song_id = request.args.get('id',     '').strip()
+    title   = request.args.get('title',  '').strip()
+    artist  = request.args.get('artist', '').strip()
+    if not song_id:
+        return jsonify({'success': False, 'error': 'Missing song id'}), 400
+
+    if song_id.startswith('yt_'):
+        yt_id = song_id[3:]
+        # Try Invidious first (fast, cached)
+        instance, itag = get_invidious_audio(yt_id)
+        if instance and itag:
+            url = f'{instance}/latest_version?id={yt_id}&itag={itag}&local=true'
+            return jsonify({'success': True, 'url': url, 'source': 'youtube_invidious'})
+        # Try cached yt-dlp result
+        cache_key = f'{title.lower().strip()}|{artist.lower().strip()}' if title else yt_id
+        audio_url = get_cached_yt_url(cache_key)
+        if audio_url:
+            return jsonify({'success': True, 'url': audio_url, 'source': 'youtube_ytdlp'})
+        # Fall back to proxy stream endpoint for yt-dlp extraction
+        proxy_url = request.host_url.rstrip('/') + f'/api/stream?id={song_id}&title={title}&artist={artist}'
+        return jsonify({'success': True, 'url': proxy_url, 'source': 'youtube_proxy'})
+    else:
+        # JioSaavn — try saavn.dev (cached 320kbps CDN URL)
+        audio_url = saavn_dev_get_song_url(song_id)
+        if not audio_url:
+            audio_url = jiosaavn_get_audio_url(song_id)
+        if audio_url:
+            return jsonify({'success': True, 'url': audio_url, 'source': 'jiosaavn'})
+        # Final fallback: proxy stream endpoint
+        proxy_url = request.host_url.rstrip('/') + f'/api/stream?id={song_id}&title={title}&artist={artist}'
+        return jsonify({'success': True, 'url': proxy_url, 'source': 'proxy_fallback'})
+
+
 @app.route('/api/refresh', methods=['GET'])
 def refresh_url():
     song_id = request.args.get('id', '').strip()
