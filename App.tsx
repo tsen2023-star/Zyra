@@ -106,8 +106,9 @@ export default function App() {
     downloads:   [] as any[],
   });
   // Refs for BackHandler — avoids stale closure issues with deps array
-  const screenRef     = useRef('all_songs');
-  const fullScreenRef = useRef(false);
+  const screenRef      = useRef('all_songs');
+  const fullScreenRef  = useRef(false);
+  const searchQueryRef = useRef(''); // mirrors searchQuery for BackHandler
 
   // ── Animations ──
   const ring1 = useRef(new Animated.Value(0)).current;
@@ -253,25 +254,31 @@ export default function App() {
   });
 
   // ─── Keep BackHandler refs in sync with state ────────────────────────────────
-  useEffect(() => { screenRef.current     = currentScreen; }, [currentScreen]);
-  useEffect(() => { fullScreenRef.current = isFullScreen;  }, [isFullScreen]);
+  useEffect(() => { screenRef.current      = currentScreen; }, [currentScreen]);
+  useEffect(() => { fullScreenRef.current  = isFullScreen;  }, [isFullScreen]);
+  useEffect(() => { searchQueryRef.current = searchQuery;   }, [searchQuery]);
 
   // ─── Android hardware back button ────────────────────────────────────────────
-  // Using refs (not state deps) prevents stale-closure issues where the old
-  // handler fires before React re-registers the new one.
+  // Uses refs only — no deps array — so the handler never has a stale closure.
   useEffect(() => {
     const onBack = (): boolean => {
-      // 1. Close full-screen player → return to current section
+      // 1. Close full-screen player → stay on current section
       if (fullScreenRef.current) {
         setIsFullScreen(false);
         return true;
       }
-      // 2. Any sub-section (artist, library, downloads, playlist) → go to Home tab
+      // 2. If search results are visible → clear search, stay on Home
+      if (searchQueryRef.current !== '') {
+        setSearchQuery('');
+        setSongsList([]);
+        return true;
+      }
+      // 3. Any sub-section (artist, library, downloads, playlist) → go to Home tab
       if (screenRef.current !== 'all_songs') {
         setCurrentScreen('all_songs');
         return true;
       }
-      // 3. Already on Home → let Android minimize the app
+      // 4. Already on Home with no search → let Android minimize the app
       return false;
     };
     const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
@@ -493,7 +500,7 @@ export default function App() {
     } catch (e) { /* silent */ }
   };
 
-  // ─── Stream URL helper ───────────────────────────────────────────────────────
+  // ─── Stream URL helper (proxy — used as fallback for queue preload) ──────────
   const getStreamUrl = useCallback((song: any): string => {
     const dl = downloads.find((d: any) => d.id === song.id);
     if (dl?.localUri) return dl.localUri;
@@ -501,6 +508,26 @@ export default function App() {
     const ae = encodeURIComponent(song.artist || '');
     return `${BACKEND_URL}/api/stream?id=${song.id}&title=${te}&artist=${ae}`;
   }, [downloads]);
+
+  // ─── Resolve direct CDN URL before handing to RNTP (eliminates proxy hop) ────
+  // Without this, RNTP → backend → saavn.dev adds ~12-15 s of latency.
+  // With this, we pre-fetch the CDN URL so RNTP connects directly.
+  const resolveStreamUrl = useCallback(async (song: any): Promise<string> => {
+    const dl = downloads.find((d: any) => d.id === song.id);
+    if (dl?.localUri) return dl.localUri;
+    try {
+      const te = encodeURIComponent(song.title  || '');
+      const ae = encodeURIComponent(song.artist || '');
+      const resp = await fetch(
+        `${BACKEND_URL}/api/stream_url?id=${song.id}&title=${te}&artist=${ae}`,
+        { signal: AbortSignal.timeout(6000) }
+      );
+      const json = await resp.json();
+      if (json.success && json.url) return json.url;
+    } catch { /* fall through to proxy */ }
+    // Fallback: let backend proxy the stream
+    return getStreamUrl(song);
+  }, [downloads, getStreamUrl]);
 
   // ─── Add up to `limit` songs to RNTP queue ──────────────────────────────────
   const addSongsToQueue = useCallback(async (songs: any[], limitN = 5) => {
@@ -572,13 +599,17 @@ export default function App() {
       setActiveTrack(track);
       if (searchQuery.trim()) saveSearchHistory(searchQuery.trim());
 
-      // Reset queue and add tapped track first
+      // Pre-resolve the direct CDN URL before adding to RNTP.
+      // This cuts playback start from ~15s to ~2s by eliminating the backend proxy hop.
+      const directUrl = await resolveStreamUrl(track);
+
+      // Reset queue and add tapped track with the resolved URL
       await TrackPlayer.reset();
       trackMetaRef.current.clear();
       trackMetaRef.current.set(String(track.id), track);
       await TrackPlayer.add({
         id:      String(track.id),
-        url:     getStreamUrl(track),
+        url:     directUrl,
         title:   track.title  || '',
         artist:  track.artist || '',
         artwork: track.image  || '',
@@ -586,33 +617,33 @@ export default function App() {
       await TrackPlayer.play();
       setIsLoading(false);
 
-      // ── In background: add next songs from current list ──
-      const list = getActiveList();
-      if (list.length > 0) {
-        const idx = list.findIndex((s: any) => s.id === track.id);
-        const nextSongs = idx >= 0 ? list.slice(idx + 1, idx + 6) : [];
-        if (nextSongs.length > 0) {
-          addSongsToQueue(nextSongs, 5);
-        }
-      }
-
-      // ── Post to history + detect mood → use to refresh genre queue ──
+      // ── Post to history + detect mood, then immediately add same-genre songs ──
+      // NOTE: We do NOT add next search-results songs to the queue here.
+      // Instead we wait for mood detection then add same-genre songs, so that
+      // skipping always plays a same-genre song — not the next search result.
       if (userToken) {
         apiCall('/api/user/history', 'POST', {
           id: track.id, title: track.title,
           artist: track.artist, image: track.image,
-        }).then(json => {
+        }).then(async json => {
           if (json.success) {
             const mood = json.mood || 'default';
             setCurrentMood(mood);
             setAutoplayReason('');
-            // Eagerly pre-fill queue with same-genre songs in background
-            fetchQueue(track.id, mood).then(() => {
-              // autoplayQueue state will update via setAutoplayQueue;
-              // addSongsToQueue is called when queue runs low (PlaybackTrackChanged event)
-            });
+            // Immediately fill queue with same-genre songs so skip plays genre match
+            try {
+              const qs  = `songId=${track.id}&userId=${userId||''}&mood=${mood}`;
+              const res = await fetch(`${BACKEND_URL}/api/recommendations/queue?${qs}`);
+              const qj  = await res.json();
+              if (qj.success && qj.queue?.length > 0) {
+                await addSongsToQueue(qj.queue, 5);
+              }
+            } catch { /* silent — prefillQueue will handle it when queue runs low */ }
           }
         }).catch(() => {});
+      } else {
+        // Not logged in — still add same-genre songs for autoplay
+        prefillQueue();
       }
     } catch (e: any) {
       console.error('Playback error:', e);
