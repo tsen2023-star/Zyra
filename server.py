@@ -112,42 +112,153 @@ url_cache     = {}
 yt_url_cache  = {}         # keyed by "title|artist"
 _artist_img_cache: dict = {}  # keyed by artist name
 
-# ─── Invidious instances (public YouTube proxy) ───────────────────────────────
-INVIDIOUS_INSTANCES = [
-    'https://invidious.kavin.rocks',
-    'https://inv.riverside.rocks',
-    'https://invidious.privacydev.net',
-    'https://yt.cdaut.de',
-]
-_invidious_itag_cache: dict = {}  # video_id → {instance, itag, ts}
+# ─── saavn.dev API (BlackHole-compatible) ────────────────────────────────────
+# Community-maintained JioSaavn wrapper used by BlackHole, SongTube, etc.
+# Returns decrypted 320kbps stream URLs — no DES crypto needed on our side.
 
-def get_invidious_audio(video_id: str):
-    """Return (instance_base, itag) from Invidious API. Prefers m4a audio."""
-    cached = _invidious_itag_cache.get(video_id)
-    if cached and time.time() - cached['ts'] < 3600:
-        return cached['instance'], cached['itag']
-    for base in INVIDIOUS_INSTANCES:
-        try:
-            r = http_requests.get(
-                f'{base}/api/v1/videos/{video_id}',
-                params={'fields': 'adaptiveFormats'},
-                timeout=10
-            )
-            if r.status_code != 200:
+SAAVNDEV_BASE = 'https://saavn.dev'
+
+def _sd_best_image(images: list) -> str:
+    """Pick highest resolution image from saavn.dev image array."""
+    if not images:
+        return ''
+    for q in ['500x500', '150x150', '50x50']:
+        for img in images:
+            if img.get('quality', '') == q:
+                return img.get('url', img.get('link', ''))
+    return images[-1].get('url', images[-1].get('link', ''))
+
+def _sd_best_url(download_urls: list) -> str:
+    """Pick 320kbps stream URL from saavn.dev downloadUrl array."""
+    if not download_urls:
+        return ''
+    # Prefer 320kbps
+    for dl in download_urls:
+        if '320' in str(dl.get('quality', '')):
+            return dl.get('url', dl.get('link', ''))
+    # Fallback: last (usually highest)
+    for dl in reversed(download_urls):
+        u = dl.get('url', dl.get('link', ''))
+        if u:
+            return u
+    return ''
+
+def saavn_dev_search(query: str, limit: int = 20) -> list:
+    """Search songs via saavn.dev — returns clean objects with 320kbps URLs."""
+    try:
+        r = http_requests.get(
+            f'{SAAVNDEV_BASE}/api/search/songs',
+            params={'query': query, 'page': 0, 'limit': limit},
+            timeout=10,
+        )
+        if r.status_code != 200:
+            return []
+        data = r.json()
+        raw = (data.get('data') or {}).get('results', [])
+        results = []
+        for song in raw:
+            sid = song.get('id', '')
+            if not sid:
                 continue
-            formats = r.json().get('adaptiveFormats', [])
-            # Prefer m4a (mp4 audio) for maximum Android compatibility
-            m4a = [f for f in formats if f.get('type', '').startswith('audio/mp4')]
-            webm = [f for f in formats if f.get('type', '').startswith('audio/webm')]
-            pool = m4a or webm or []
-            if pool:
-                best = sorted(pool, key=lambda x: int(x.get('bitrate', 0)), reverse=True)[0]
-                itag = best.get('itag')
-                _invidious_itag_cache[video_id] = {'instance': base, 'itag': itag, 'ts': time.time()}
-                return base, itag
-        except Exception:
-            continue
-    return None, None
+            # Artist name
+            artists = song.get('artists', {})
+            primary = artists.get('primary', [])
+            artist = ', '.join([a['name'] for a in primary if a.get('name')])
+            if not artist:
+                artist = clean_html(song.get('primaryArtists', '') or 'Unknown')
+            title = clean_html(song.get('name', '') or 'Unknown')
+            image = _sd_best_image(song.get('image', []))
+            results.append({
+                'id':     sid,
+                'title':  title,
+                'artist': artist,
+                'image':  image,
+                'url':    None,
+                'source': 'jiosaavn',
+            })
+        return results
+    except Exception as e:
+        print(f'saavn.dev search error: {e}')
+        return []
+
+def saavn_dev_get_song_url(song_id: str) -> str:
+    """Fetch 320kbps URL from saavn.dev — no DES decryption needed."""
+    cached = get_cached_url(song_id)
+    if cached:
+        return cached
+    try:
+        r = http_requests.get(
+            f'{SAAVNDEV_BASE}/api/songs/{song_id}',
+            timeout=8,
+        )
+        data = r.json()
+        songs_data = data.get('data', [])
+        if isinstance(songs_data, dict):
+            songs_data = [songs_data]
+        if not songs_data:
+            return ''
+        url = _sd_best_url(songs_data[0].get('downloadUrl', []))
+        if url:
+            set_cached_url(song_id, url)
+        return url
+    except Exception as e:
+        print(f'saavn.dev get song URL error: {e}')
+        return ''
+
+def saavn_dev_artist_songs(artist_name: str, max_songs: int = 50) -> list:
+    """Get artist discography from saavn.dev (artist search → top songs)."""
+    try:
+        # Step 1: Find artist ID
+        r = http_requests.get(
+            f'{SAAVNDEV_BASE}/api/search/artists',
+            params={'query': artist_name, 'page': 0, 'limit': 1},
+            timeout=8,
+        )
+        data = r.json()
+        artists_list = (data.get('data') or {}).get('results', [])
+        if not artists_list:
+            return []
+        artist_id = artists_list[0].get('id', '')
+        if not artist_id:
+            return []
+
+        # Step 2: Paginate through top songs
+        all_songs: list = []
+        for page in range(4):  # up to 4 pages (typically 10 songs/page)
+            if len(all_songs) >= max_songs:
+                break
+            try:
+                r2 = http_requests.get(
+                    f'{SAAVNDEV_BASE}/api/artists/{artist_id}/songs',
+                    params={'page': page, 'sortBy': 'popularity', 'sortOrder': 'desc'},
+                    timeout=8,
+                )
+                data2 = r2.json()
+                songs_raw = (data2.get('data') or {}).get('songs', [])
+                if not songs_raw:
+                    break
+                for song in songs_raw:
+                    sid = song.get('id', '')
+                    if not sid:
+                        continue
+                    a_info  = song.get('artists', {})
+                    primary = a_info.get('primary', [])
+                    artist  = ', '.join([a['name'] for a in primary if a.get('name')]) or artist_name
+                    title   = clean_html(song.get('name', '') or 'Unknown')
+                    image   = _sd_best_image(song.get('image', []))
+                    all_songs.append({
+                        'id': sid, 'title': title, 'artist': artist,
+                        'image': image, 'url': None, 'source': 'jiosaavn',
+                    })
+                    if len(all_songs) >= max_songs:
+                        break
+            except Exception:
+                break
+        return all_songs
+    except Exception as e:
+        print(f'saavn.dev artist songs error: {e}')
+        return []
+
 
 def get_cached_search(query):
     item = search_cache.get(query)
@@ -883,7 +994,7 @@ def recommendations_queue():
 
 @app.route('/api/search', methods=['GET'])
 def search():
-    """Search songs via JioSaavn (primary) with YouTube fallback."""
+    """Search songs via saavn.dev (BlackHole API) → JioSaavn fallback → YouTube."""
     query = request.args.get('query', '').strip()
     if not query:
         return jsonify({'success': False, 'error': 'No query provided'})
@@ -891,10 +1002,13 @@ def search():
     if cached is not None:
         return jsonify({'success': True, 'data': {'results': cached}})
     try:
-        # ── Primary: JioSaavn ──
-        results = jiosaavn_search(query)
+        # ── Primary: saavn.dev (BlackHole-compatible API) ──
+        results = saavn_dev_search(query, limit=20)
         if not results:
-            # ── Fallback: YouTube ──
+            # ── Fallback 1: direct JioSaavn API ──
+            results = jiosaavn_search(query)
+        if not results:
+            # ── Fallback 2: YouTube ──
             results = youtube_search_songs(query, max_results=15)
         if results:
             set_cached_search(query, results)
@@ -979,7 +1093,7 @@ def top_artists():
 
 @app.route('/api/artist', methods=['GET'])
 def artist_tracks():
-    """Get 50 unique songs by artist — JioSaavn primary, YouTube fallback."""
+    """Get 50 unique songs by artist — saavn.dev (BlackHole API) primary, fallbacks."""
     name = request.args.get('name', '').strip()
     if not name:
         return jsonify({'success': False, 'error': 'No artist name provided'})
@@ -989,42 +1103,20 @@ def artist_tracks():
     if cached is not None:
         return jsonify({'success': True, 'artist': {'name': name}, 'tracks': cached})
 
-    seen_titles: set = set()
-    all_songs: list = []
+    # ── Primary: saavn.dev artist discography ──
+    all_songs = saavn_dev_artist_songs(name, max_songs=50)
 
-    # ── JioSaavn: multiple queries to get 50 unique songs ──
-    js_queries = [
-        f'{name} best songs',
-        f'{name} top hits',
-        f'{name} popular songs',
-        f'{name} new songs',
-        f'{name} hits',
-    ]
-    for q in js_queries:
-        if len(all_songs) >= 50:
-            break
-        batch = jiosaavn_search(q)
-        for song in batch:
-            t_key = song.get('title', '').lower().strip()
-            if t_key and t_key not in seen_titles:
-                seen_titles.add(t_key)
-                song['artist'] = name  # normalize artist name
-                all_songs.append(song)
-            if len(all_songs) >= 50:
-                break
-
-    # ── YouTube fallback if JioSaavn returned very few ──
+    # ── Fallback: JioSaavn search queries ──
     if len(all_songs) < 10:
-        yt_queries = [
-            f'{name} best songs',
-            f'{name} top hits',
-            f'{name} popular songs',
+        seen_titles: set = set(seen_titles := {s['title'].lower() for s in all_songs})
+        js_queries = [
+            f'{name} best songs', f'{name} top hits',
+            f'{name} popular songs', f'{name} hits',
         ]
-        for q in yt_queries:
+        for q in js_queries:
             if len(all_songs) >= 50:
                 break
-            batch = youtube_search_songs(q, max_results=15)
-            for song in batch:
+            for song in jiosaavn_search(q):
                 t_key = song.get('title', '').lower().strip()
                 if t_key and t_key not in seen_titles:
                     seen_titles.add(t_key)
@@ -1033,10 +1125,23 @@ def artist_tracks():
                 if len(all_songs) >= 50:
                     break
 
+    # ── Last resort: YouTube ──
+    if len(all_songs) < 5:
+        seen_titles2: set = {s['title'].lower() for s in all_songs}
+        for q in [f'{name} best songs', f'{name} top hits']:
+            for song in youtube_search_songs(q, max_results=15):
+                t_key = song.get('title', '').lower().strip()
+                if t_key and t_key not in seen_titles2:
+                    seen_titles2.add(t_key)
+                    song['artist'] = name
+                    all_songs.append(song)
+                if len(all_songs) >= 50:
+                    break
+
     if all_songs:
         set_cached_search(cache_key, all_songs)
-
     return jsonify({'success': True, 'artist': {'name': name}, 'tracks': all_songs})
+
 
 
 @app.route('/api/stream', methods=['GET'])
@@ -1096,11 +1201,16 @@ def stream_audio():
                 print(f'yt-dlp extraction error: {e}')
         source = 'youtube'
     else:
-        # 1️⃣  Try JioSaavn first
-        audio_url = jiosaavn_get_audio_url(song_id)
+        # 1️⃣  saavn.dev (BlackHole API) — 320kbps, no DES decryption
+        audio_url = saavn_dev_get_song_url(song_id)
         source    = 'jiosaavn'
 
-        # 2️⃣  Auto-fallback to YouTube if JioSaavn returned nothing
+        # 2️⃣  Legacy JioSaavn DES fallback
+        if not audio_url:
+            print(f'saavn.dev failed for {song_id} — trying legacy JioSaavn')
+            audio_url = jiosaavn_get_audio_url(song_id)
+
+        # 3️⃣  Auto-fallback to YouTube if JioSaavn returned nothing
         if not audio_url and title:
             print(f'JioSaavn failed for {song_id} — trying YouTube fallback')
             audio_url = youtube_get_audio_url(title, artist)
