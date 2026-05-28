@@ -260,6 +260,43 @@ def saavn_dev_artist_songs(artist_name: str, max_songs: int = 50) -> list:
         return []
 
 
+# ─── Invidious instances (YouTube proxy — used for yt_ songs) ────────────────
+INVIDIOUS_INSTANCES = [
+    'https://invidious.kavin.rocks',
+    'https://inv.riverside.rocks',
+    'https://invidious.privacydev.net',
+    'https://yt.cdaut.de',
+]
+_invidious_itag_cache: dict = {}  # video_id → {instance, itag, ts}
+
+def get_invidious_audio(video_id: str):
+    """Return (instance_base, itag) from Invidious API. Prefers m4a audio."""
+    cached = _invidious_itag_cache.get(video_id)
+    if cached and time.time() - cached['ts'] < 3600:
+        return cached['instance'], cached['itag']
+    for base in INVIDIOUS_INSTANCES:
+        try:
+            r = http_requests.get(
+                f'{base}/api/v1/videos/{video_id}',
+                params={'fields': 'adaptiveFormats'},
+                timeout=10
+            )
+            if r.status_code != 200:
+                continue
+            formats = r.json().get('adaptiveFormats', [])
+            m4a  = [f for f in formats if f.get('type', '').startswith('audio/mp4')]
+            webm = [f for f in formats if f.get('type', '').startswith('audio/webm')]
+            pool = m4a or webm or []
+            if pool:
+                best = sorted(pool, key=lambda x: int(x.get('bitrate', 0)), reverse=True)[0]
+                itag = best.get('itag')
+                _invidious_itag_cache[video_id] = {'instance': base, 'itag': itag, 'ts': time.time()}
+                return base, itag
+        except Exception:
+            continue
+    return None, None
+
+
 def get_cached_search(query):
     item = search_cache.get(query)
     if item and time.time() - item['ts'] < SEARCH_CACHE_TTL:
