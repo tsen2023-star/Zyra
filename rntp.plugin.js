@@ -1,13 +1,17 @@
 /**
  * Custom Expo config plugin for react-native-track-player (RNTP 4.x).
  *
- * Only adds the required AndroidManifest.xml entries — no Gradle patching
- * (Gradle patching via withDangerousMod was causing "repositoriesMode" conflicts
- *  with React Native 0.74's dependency resolution management).
+ * IMPORTANT: RNTP 4.x already declares MusicService in its OWN AndroidManifest.xml:
+ *   android:name="com.doublesymmetry.trackplayer.service.MusicService"
+ *   android:exported="true"
+ *   android:foregroundServiceType="mediaPlayback"
  *
- * Verified correct class names from node_modules/react-native-track-player/android source:
- *   - com.doublesymmetry.trackplayer.service.MusicService  (HeadlessJsTaskService subclass)
- *   - androidx.media.session.MediaButtonReceiver            (earbud/BT media buttons)
+ * DO NOT re-declare MusicService here — duplicate entries with conflicting attributes
+ * (especially exported="false" vs exported="true") cause a manifest merger failure
+ * that EAS reports as "Gradle build failed with unknown error".
+ *
+ * This plugin ONLY adds MediaButtonReceiver, which is NOT in RNTP's manifest
+ * but is required for earbud / Bluetooth media button routing on Android.
  */
 const { withAndroidManifest } = require('@expo/config-plugins');
 
@@ -15,21 +19,15 @@ module.exports = function withTrackPlayer(config) {
   return withAndroidManifest(config, async (cfg) => {
     const app = cfg.modResults.manifest.application[0];
 
-    // ── Service: MusicService ────────────────────────────────────────────────
-    if (!app.service) app.service = [];
-    if (!app.service.some(s => s.$?.['android:name'] === 'com.doublesymmetry.trackplayer.service.MusicService')) {
-      app.service.push({
-        $: {
-          'android:name':                  'com.doublesymmetry.trackplayer.service.MusicService',
-          'android:exported':              'false',
-          'android:foregroundServiceType': 'mediaPlayback',
-        },
-      });
-    }
-
-    // ── Receiver: MediaButtonReceiver (earbud / Bluetooth media buttons) ─────
+    // ── MediaButtonReceiver: routes earbud / BT media buttons to MusicService ─
+    // RNTP's MusicService handles MEDIA_BUTTON intents via its own intent-filter,
+    // but MediaButtonReceiver is needed to properly route button presses from the
+    // system's media session API (lock screen, Bluetooth, earbuds).
     if (!app.receiver) app.receiver = [];
-    if (!app.receiver.some(r => r.$?.['android:name'] === 'androidx.media.session.MediaButtonReceiver')) {
+    const alreadyHasReceiver = app.receiver.some(
+      r => r.$?.['android:name'] === 'androidx.media.session.MediaButtonReceiver'
+    );
+    if (!alreadyHasReceiver) {
       app.receiver.push({
         $: {
           'android:name':     'androidx.media.session.MediaButtonReceiver',
