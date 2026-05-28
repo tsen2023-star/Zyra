@@ -1,11 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity,
   Switch, StatusBar, ActivityIndicator, Modal, KeyboardAvoidingView,
-  Platform, Alert, Animated, Easing, Image
+  Platform, Alert, Animated, Easing, Image, BackHandler
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Audio } from 'expo-av';
+import TrackPlayer, {
+  Capability, Event, State, AppKilledPlaybackBehavior,
+  usePlaybackState, useProgress, useTrackPlayerEvents,
+} from 'react-native-track-player';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import { Accelerometer } from 'expo-sensors';
@@ -45,15 +48,19 @@ export default function App() {
   const [activePlaylistId, setActivePlaylistId] = useState<string|null>(null);
 
   // ── Player ──
-  const [isFullScreen, setIsFullScreen] = useState(false);
-  const [sound,            setSound]            = useState<Audio.Sound|null>(null);
-  const [activeTrack,      setActiveTrack]      = useState<any>(null);
-  const [isPlaying,        setIsPlaying]        = useState(false);
-  const [isLoading,        setIsLoading]        = useState(false);
-  const [position,         setPosition]         = useState(0);
-  const [duration,         setDuration]         = useState(0);
-  const [isYoutubeFallback, setIsYoutubeFallback] = useState(false);  // true when streaming via YouTube
+  const [isFullScreen, setIsFullScreen]     = useState(false);
+  const [activeTrack,  setActiveTrack]      = useState<any>(null);
+  const [isLoading,    setIsLoading]        = useState(false);
+  const [isYoutubeFallback, setIsYoutubeFallback] = useState(false);
   const progressBarWidthRef = useRef<number>(0);
+
+  // ── RNTP derived state (hooks must be at component top level) ──
+  const playerState = usePlaybackState();
+  const isPlaying   = playerState.state === State.Playing;
+  const { position: posRaw, duration: durRaw } = useProgress(500);
+  // Convert RNTP seconds → milliseconds so existing UI code stays unchanged
+  const position = posRaw  * 1000;
+  const duration = durRaw  * 1000;
 
   // ── Search ──
   const [searchQuery,    setSearchQuery]    = useState('');
@@ -88,7 +95,16 @@ export default function App() {
 
   const typingTimeoutRef = useRef<any>(null);
   const playNextRef      = useRef<any>(null);
-  const autoNextRef      = useRef<any>(null);
+  // Maps track ID → full song metadata (used by RNTP track-change handler)
+  const trackMetaRef     = useRef<Map<string, any>>(new Map());
+  // Ref mirror for state values needed inside native event callbacks
+  const queueCtxRef = useRef({
+    activeTrack: null as any,
+    userId:      null as string | null,
+    userToken:   null as string | null,
+    currentMood: 'default',
+    downloads:   [] as any[],
+  });
 
   // ── Animations ──
   const ring1 = useRef(new Animated.Value(0)).current;
@@ -163,8 +179,81 @@ export default function App() {
     init();
   }, []);
 
-  // ─── Sound cleanup ───────────────────────────────────────────────────────────
-  useEffect(() => { return sound ? () => { sound.unloadAsync(); } : undefined; }, [sound]);
+  // ─── RNTP player setup ───────────────────────────────────────────────────────
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        await TrackPlayer.setupPlayer({
+          minBuffer:  3,   // seconds to buffer before playback starts
+          maxBuffer:  30,  // max seconds buffered ahead
+          playBuffer: 1,   // seconds needed to resume after stall
+        });
+        await TrackPlayer.updateOptions({
+          capabilities: [
+            Capability.Play, Capability.Pause,
+            Capability.SkipToNext, Capability.SkipToPrevious,
+            Capability.Stop, Capability.SeekTo,
+          ],
+          compactCapabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext],
+          progressUpdateEventInterval: 1,
+          android: {
+            appKilledPlaybackBehavior: AppKilledPlaybackBehavior.StopPlaybackAndRemoveNotification,
+          },
+        });
+      } catch (e) {
+        // setupPlayer throws if already initialized (e.g., dev hot reload) — safe to ignore
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  // ─── Sync state refs so native event callbacks always have fresh values ───────
+  useEffect(() => {
+    queueCtxRef.current = { activeTrack, userId, userToken, currentMood, downloads };
+  });
+
+  // ─── RNTP track-changed event — update active track when queue auto-advances ──
+  useTrackPlayerEvents([Event.PlaybackTrackChanged], async (event: any) => {
+    if (event.nextTrack !== undefined && event.nextTrack !== null) {
+      try {
+        const queue = await TrackPlayer.getQueue();
+        const nextTrack = queue[event.nextTrack];
+        if (nextTrack) {
+          const meta = trackMetaRef.current.get(String(nextTrack.id));
+          if (meta) setActiveTrack(meta);
+          // Post to listening history
+          const { userToken: tok } = queueCtxRef.current;
+          if (tok && meta) {
+            fetch(`${BACKEND_URL}/api/user/history`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
+              body: JSON.stringify(meta),
+            }).catch(() => {});
+          }
+          // When only 1 song left in queue, pre-load 5 more
+          const remaining = queue.length - event.nextTrack - 1;
+          if (remaining <= 1) prefillQueue();
+        }
+      } catch {}
+    }
+  });
+
+  // ─── RNTP queue-ended event — fetch fresh song and keep playing ───────────────
+  useTrackPlayerEvents([Event.PlaybackQueueEnded], async () => {
+    prefillQueue();
+  });
+
+  // ─── Android hardware back button ────────────────────────────────────────────
+  useEffect(() => {
+    const onBack = () => {
+      if (isFullScreen) { setIsFullScreen(false); return true; }
+      if (currentScreen !== 'all_songs') { setCurrentScreen('all_songs'); return true; }
+      return false; // let system handle → minimizes app
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
+    return () => sub.remove();
+  }, [isFullScreen, currentScreen]);
 
   // ─── Search debounce ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -245,11 +334,12 @@ export default function App() {
   };
 
   const logout = async () => {
-    if (sound) await sound.unloadAsync();
-    setSound(null); setActiveTrack(null); setIsLoggedIn(false);
+    await TrackPlayer.reset();
+    setActiveTrack(null); setIsLoggedIn(false);
     setAuthMode('login'); setEmail(''); setPassword(''); setUsername('');
-    setUserToken(null); setUserId(null); setPosition(0); setDuration(0);
+    setUserToken(null); setUserId(null);
     setFavorites([]); setPlaylists([]); setDownloads([]);
+    trackMetaRef.current.clear();
     await AsyncStorage.multiRemove(['token', 'userId', 'username']);
   };
 
@@ -380,6 +470,53 @@ export default function App() {
     } catch (e) { /* silent */ }
   };
 
+  // ─── Stream URL helper ───────────────────────────────────────────────────────
+  const getStreamUrl = useCallback((song: any): string => {
+    const dl = downloads.find((d: any) => d.id === song.id);
+    if (dl?.localUri) return dl.localUri;
+    const te = encodeURIComponent(song.title  || '');
+    const ae = encodeURIComponent(song.artist || '');
+    return `${BACKEND_URL}/api/stream?id=${song.id}&title=${te}&artist=${ae}`;
+  }, [downloads]);
+
+  // ─── Add up to `limit` songs to RNTP queue ──────────────────────────────────
+  const addSongsToQueue = useCallback(async (songs: any[], limitN = 5) => {
+    let added = 0;
+    for (const song of songs) {
+      if (added >= limitN) break;
+      if (!song?.id) continue;
+      const existingMeta = trackMetaRef.current.get(String(song.id));
+      if (existingMeta) continue; // already in queue
+      trackMetaRef.current.set(String(song.id), song);
+      try {
+        await TrackPlayer.add({
+          id:      String(song.id),
+          url:     getStreamUrl(song),
+          title:   song.title  || '',
+          artist:  song.artist || '',
+          artwork: song.image  || '',
+        });
+        added++;
+      } catch { /* skip tracks that fail to add */ }
+    }
+  }, [getStreamUrl]);
+
+  // ─── Pre-fill queue when running low ─────────────────────────────────────────
+  const prefillQueue = useCallback(async () => {
+    const { activeTrack: at, userId: uid, currentMood: mood, userToken: tok } = queueCtxRef.current;
+    if (!at) return;
+    try {
+      const qs  = `songId=${at.id}&userId=${uid||''}&mood=${mood}`;
+      const res = await fetch(`${BACKEND_URL}/api/autoplay?${qs}`);
+      const json = await res.json();
+      if (json.success && json.song) {
+        await addSongsToQueue([json.song], 1);
+        const q = await TrackPlayer.getQueue();
+        if (q.length === 1) await TrackPlayer.play(); // resume if queue was empty
+      }
+    } catch {}
+  }, [addSongsToQueue]);
+
   // ─── Fetch artist top tracks ─────────────────────────────────────────────────
   const fetchArtist = async (artist: any) => {
     setActiveArtist(artist);
@@ -407,108 +544,56 @@ export default function App() {
   // ─── Play track ──────────────────────────────────────────────────────────────
   async function handleTrackPress(track: any) {
     try {
-      setIsLoading(true); setPosition(0); setDuration(0); setIsYoutubeFallback(false);
-      if (sound) { await sound.unloadAsync(); setSound(null); }
+      setIsLoading(true);
+      setIsYoutubeFallback(track.id?.startsWith('yt_') || false);
       setActiveTrack(track);
       if (searchQuery.trim()) saveSearchHistory(searchQuery.trim());
 
-      // Full audio mode: background playback + earbuds + locked screen
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        staysActiveInBackground: true,
-        playsInSilentModeIOS: true,
-        playThroughEarpieceAndroid: false,
-        shouldDuckAndroid: false,
-        interruptionModeIOS: 1,    // DoNotMix
-        interruptionModeAndroid: 1, // DoNotMix
+      // Reset queue and add tapped track first
+      await TrackPlayer.reset();
+      trackMetaRef.current.clear();
+      trackMetaRef.current.set(String(track.id), track);
+      await TrackPlayer.add({
+        id:      String(track.id),
+        url:     getStreamUrl(track),
+        title:   track.title  || '',
+        artist:  track.artist || '',
+        artwork: track.image  || '',
       });
+      await TrackPlayer.play();
+      setIsLoading(false);
 
-      let newSound: any;
-      let usedYoutube = false;
-      const downloadedTrack = downloads.find(d => d.id === track.id);
-
-      if (downloadedTrack?.localUri) {
-        // ─ Tier 0: offline download ─
-        const res = await Audio.Sound.createAsync({ uri: downloadedTrack.localUri }, { shouldPlay: true });
-        newSound = res.sound;
-      } else if (track.id?.startsWith('yt_')) {
-        const titleEnc  = encodeURIComponent(track.title  || '');
-        const artistEnc = encodeURIComponent(track.artist || '');
-        const streamUrl = `${BACKEND_URL}/api/stream?id=${track.id}&title=${titleEnc}&artist=${artistEnc}`;
-        const res = await Audio.Sound.createAsync(
-          { uri: streamUrl },
-          { shouldPlay: true, progressUpdateIntervalMillis: 500 }
-        );
-        newSound = res.sound;
-        usedYoutube = true;
-      } else {
-        // ─ Tier 1: JioSaavn stream (title+artist passed so backend can auto-fallback) ─
-        const titleEnc  = encodeURIComponent(track.title  || '');
-        const artistEnc = encodeURIComponent(track.artist || '');
-        const streamUrl = `${BACKEND_URL}/api/stream?id=${track.id}&title=${titleEnc}&artist=${artistEnc}`;
-        try {
-          const res = await Audio.Sound.createAsync({ uri: streamUrl }, { shouldPlay: true });
-          newSound = res.sound;
-        } catch {
-          // ─ Tier 2: /api/refresh (clears stale JioSaavn cache and retries) ─
-          try {
-            const refreshRes  = await fetch(`${BACKEND_URL}/api/refresh?id=${track.id}`);
-            const refreshJson = await refreshRes.json();
-            if (refreshJson.success) {
-              const res = await Audio.Sound.createAsync({ uri: refreshJson.data.url }, { shouldPlay: true });
-              newSound = res.sound;
-            } else {
-              throw new Error('refresh failed');
-            }
-          } catch {
-            // ─ Tier 3: explicit YouTube fallback ─
-            const ytRes  = await fetch(`${BACKEND_URL}/api/youtube-fallback?title=${titleEnc}&artist=${artistEnc}`);
-            const ytJson = await ytRes.json();
-            if (ytJson.success && ytJson.url) {
-              const res = await Audio.Sound.createAsync({ uri: ytJson.url }, { shouldPlay: true });
-              newSound = res.sound;
-              usedYoutube = true;
-            } else {
-              throw new Error('Song unavailable on JioSaavn and YouTube');
-            }
-          }
+      // ── In background: add next songs from current list ──
+      const list = getActiveList();
+      if (list.length > 0) {
+        const idx = list.findIndex((s: any) => s.id === track.id);
+        const nextSongs = idx >= 0 ? list.slice(idx + 1, idx + 6) : [];
+        if (nextSongs.length > 0) {
+          addSongsToQueue(nextSongs, 5);
         }
       }
 
-      setSound(newSound);
-      setIsPlaying(true);
-      setIsYoutubeFallback(usedYoutube);
-
-      // Eagerly populate the queue immediately with current mood (don't wait for history)
-      fetchQueue(track.id, currentMood || 'default');
-
-      // Post to history + detect mood, then refresh queue with better mood
+      // ── Post to history + detect mood → use to refresh genre queue ──
       if (userToken) {
-        apiCall('/api/user/history', 'POST', { id: track.id, title: track.title, artist: track.artist, image: track.image }).then(json => {
+        apiCall('/api/user/history', 'POST', {
+          id: track.id, title: track.title,
+          artist: track.artist, image: track.image,
+        }).then(json => {
           if (json.success) {
             const mood = json.mood || 'default';
             setCurrentMood(mood);
             setAutoplayReason('');
-            fetchQueue(track.id, mood);   // refresh queue with detected mood
+            // Eagerly pre-fill queue with same-genre songs in background
+            fetchQueue(track.id, mood).then(() => {
+              // autoplayQueue state will update via setAutoplayQueue;
+              // addSongsToQueue is called when queue runs low (PlaybackTrackChanged event)
+            });
           }
-        });
+        }).catch(() => {});
       }
-
-
-      newSound.setOnPlaybackStatusUpdate((status: any) => {
-        if (status.isLoaded) {
-          setPosition(status.positionMillis || 0);
-          setDuration(status.durationMillis || 0);
-          if (status.didJustFinish) {
-            // Small delay prevents double-trigger on some devices
-            setTimeout(() => { if (autoNextRef.current) autoNextRef.current(); }, 300);
-          }
-        }
-      });
     } catch (e: any) {
       console.error('Playback error:', e);
-      Alert.alert('Song Unavailable', 'This song could not be played from JioSaavn or YouTube. Try another song.');
-    } finally {
+      Alert.alert('Song Unavailable', 'Could not play this song. Please try another.');
       setIsLoading(false);
     }
   }
@@ -516,9 +601,9 @@ export default function App() {
 
   // ─── Controls ────────────────────────────────────────────────────────────────
   const togglePlayPause = async () => {
-    if (!sound) return;
-    if (isPlaying) { await sound.pauseAsync(); setIsPlaying(false); }
-    else           { await sound.playAsync();  setIsPlaying(true);  }
+    if (!activeTrack) return;
+    if (isPlaying) await TrackPlayer.pause();
+    else           await TrackPlayer.play();
   };
 
   const formatTime = (millis: number) => {
@@ -530,11 +615,10 @@ export default function App() {
   const getProgressPercent = () => duration > 0 ? (position / duration) * 100 : 0;
 
   const handleProgressBarTap = async (event: any) => {
-    if (!sound || duration === 0) return;
-    const pct = event.nativeEvent.locationX / progressBarWidthRef.current;
-    const target = Math.floor(pct * duration);
-    setPosition(target);
-    await sound.setPositionAsync(target);
+    if (!activeTrack || duration === 0) return;
+    const pct    = event.nativeEvent.locationX / progressBarWidthRef.current;
+    const target = pct * durRaw; // durRaw is in seconds — seekTo() takes seconds
+    await TrackPlayer.seekTo(target);
   };
 
   // ─── Active list helper ──────────────────────────────────────────────────────
@@ -551,57 +635,31 @@ export default function App() {
   // ─── Smart autoplay ──────────────────────────────────────────────────────────
   const playNext = async () => {
     if (!activeTrack) return;
-    const list = getActiveList();
-
-    // 1. Try sequential next in current list
-    if (list.length > 0) {
-      const idx = list.findIndex((s: any) => s.id === activeTrack.id);
-      if (idx !== -1 && idx + 1 < list.length) { await handleTrackPress(list[idx + 1]); return; }
-    }
-
-    // 2. Smart autoplay from JioSaavn mood recommendations
-    if (smartAutoplay) {
-      try {
-        setIsLoading(true);
-        const qs  = `songId=${activeTrack.id}&userId=${userId||''}&mood=${currentMood}`;
-        const res = await fetch(`${BACKEND_URL}/api/autoplay?${qs}`);
-        const json = await res.json();
-        if (json.success) {
-          setAutoplayReason(json.reason);
-          setCurrentMood(json.mood || 'default');
-          await handleTrackPress(json.song);
-          return;
-        }
-      } catch (e) { console.error('Smart autoplay failed', e); }
-      finally { setIsLoading(false); }
-    }
-
-    // 3. Fallback: random
     try {
-      const res  = await fetch(`${BACKEND_URL}/api/random`);
-      const json = await res.json();
-      if (json.success && json.data?.song) { await handleTrackPress(json.data.song); return; }
-    } catch (e) { /* silent */ }
-
-    if (list.length > 0) await handleTrackPress(list[0]);
+      await TrackPlayer.skipToNext();
+    } catch {
+      // Queue exhausted — fetch a fresh song from autoplay
+      await handleAutoNext();
+    }
   };
 
   const playPrevious = async () => {
     if (!activeTrack) return;
-    const list = getActiveList();
-    if (list.length === 0) return;
-    const idx = list.findIndex((s: any) => s.id === activeTrack.id);
-    await handleTrackPress(list[Math.max(0, idx - 1)]);
+    // If >3s played, restart current song; otherwise go to previous
+    if (posRaw > 3) {
+      await TrackPlayer.seekTo(0);
+    } else {
+      try { await TrackPlayer.skipToPrevious(); }
+      catch { await TrackPlayer.seekTo(0); }
+    }
   };
 
-  // Assign ref in render body — always fresh, no useEffect needed
-  // This guarantees shake + playback-end callbacks always call the latest version
+  // Assign playNextRef in render body — always fresh for shake handler
   playNextRef.current = playNext;
 
-  // ─── Genre-random auto-next (called when a song ENDS naturally) ──────────────
+  // ─── Genre-smart auto-next (called when queue runs empty) ────────────────────
   const handleAutoNext = async () => {
     if (!activeTrack) return;
-    // Always use smart autoplay for genre-random pick
     if (smartAutoplay) {
       try {
         setIsLoading(true);
@@ -617,16 +675,13 @@ export default function App() {
       } catch (e) { console.error('Auto-next failed', e); }
       finally { setIsLoading(false); }
     }
-    // Fallback: random song
+    // Fallback: random
     try {
       const res  = await fetch(`${BACKEND_URL}/api/random`);
       const json = await res.json();
       if (json.success && json.data?.song) { await handleTrackPress(json.data.song); }
-    } catch (e) { /* silent */ }
+    } catch { /* silent */ }
   };
-
-  // Keep autoNextRef in sync so playback-end callback always calls the latest version
-  autoNextRef.current = handleAutoNext;
 
   // ─── Theme ───────────────────────────────────────────────────────────────────
   const theme = {

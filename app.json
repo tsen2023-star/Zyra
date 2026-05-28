@@ -18,13 +18,20 @@
       "supportsTablet": true
     },
     "android": {
-      "package": "com.bablu2006.zyramusic"
+      "package": "com.bablu2006.zyramusic",
+      "permissions": [
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ]
     },
+    "plugins": [
+      "react-native-track-player"
+    ],
     "extra": {
       "eas": {
-        "projectId": "0b5c13cf-7866-4053-bc93-25fc0baf6648"
+        "projectId": "b4e70c09-1466-408f-8d28-4ca21942b4b2"
       }
     },
-    "owner": "bablu2006"
+    "owner": "bablu0006"
   }
 }
