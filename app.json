@@ -25,15 +25,7 @@
       ]
     },
     "plugins": [
-      "./rntp.plugin.js",
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "extraMavenRepos": ["https://jitpack.io"]
-          }
-        }
-      ]
+      "./rntp.plugin.js"
     ],
     "extra": {
       "eas": {
