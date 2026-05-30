@@ -168,12 +168,14 @@ def saavn_dev_search(query: str, limit: int = 20) -> list:
                 artist = clean_html(song.get('primaryArtists', '') or 'Unknown')
             title = clean_html(song.get('name', '') or 'Unknown')
             image = _sd_best_image(song.get('image', []))
+            # Include direct 320kbps CDN URL from search result — eliminates 15s stream-resolve delay
+            url = _sd_best_url(song.get('downloadUrl', []))
             results.append({
                 'id':     sid,
                 'title':  title,
                 'artist': artist,
                 'image':  image,
-                'url':    None,
+                'url':    url or None,
                 'source': 'jiosaavn',
             })
         return results
@@ -257,6 +259,66 @@ def saavn_dev_artist_songs(artist_name: str, max_songs: int = 50) -> list:
         return all_songs
     except Exception as e:
         print(f'saavn.dev artist songs error: {e}')
+        return []
+
+
+def saavn_dev_album_search(query: str, limit: int = 5) -> list:
+    """Search movie/album playlists via saavn.dev — for grouping songs by film."""
+    try:
+        r = http_requests.get(
+            f'{SAAVNDEV_BASE}/api/search/albums',
+            params={'query': query, 'page': 0, 'limit': limit},
+            timeout=10,
+        )
+        if r.status_code != 200:
+            return []
+        data = r.json()
+        raw = (data.get('data') or {}).get('results', [])
+        albums = []
+        for album in raw:
+            album_id = album.get('id', '')
+            if not album_id:
+                continue
+            name  = clean_html(album.get('name', '') or 'Unknown')
+            image = _sd_best_image(album.get('image', []))
+            albums.append({'id': album_id, 'name': name, 'image': image})
+        return albums
+    except Exception as e:
+        print(f'saavn.dev album search error: {e}')
+        return []
+
+
+def saavn_dev_album_songs(album_id: str) -> list:
+    """Fetch all songs for an album/movie from saavn.dev (includes direct CDN URLs)."""
+    try:
+        r = http_requests.get(
+            f'{SAAVNDEV_BASE}/api/albums',
+            params={'id': album_id},
+            timeout=12,
+        )
+        if r.status_code != 200:
+            return []
+        data = r.json()
+        album_data = (data.get('data') or {})
+        songs_raw  = album_data.get('songs', [])
+        songs = []
+        for song in songs_raw:
+            sid = song.get('id', '')
+            if not sid:
+                continue
+            a_info  = song.get('artists', {})
+            primary = a_info.get('primary', [])
+            artist  = ', '.join([a['name'] for a in primary if a.get('name')]) or 'Unknown'
+            title   = clean_html(song.get('name', '') or 'Unknown')
+            image   = _sd_best_image(song.get('image', []))
+            url     = _sd_best_url(song.get('downloadUrl', []))
+            songs.append({
+                'id': sid, 'title': title, 'artist': artist,
+                'image': image, 'url': url or None, 'source': 'jiosaavn',
+            })
+        return songs
+    except Exception as e:
+        print(f'saavn.dev album songs error: {e}')
         return []
 
 
@@ -789,6 +851,113 @@ def login():
         print(f'Login error: {e}')
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+# ─── Forgot Password / OTP ────────────────────────────────────────────────────
+
+import smtplib
+from email.mime.text import MIMEText
+import secrets
+
+_otp_store: dict = {}   # email → {otp, expires_at, user_id, verified}
+OTP_EXPIRY_SECONDS = 600  # 10 minutes
+
+EMAIL_HOST     = os.environ.get('EMAIL_HOST',     'smtp.gmail.com')
+EMAIL_PORT     = int(os.environ.get('EMAIL_PORT', 587))
+EMAIL_FROM     = os.environ.get('EMAIL_FROM',     '')
+EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD', '')
+
+
+def send_otp_email(to_email: str, otp: str) -> bool:
+    """Send OTP via Gmail SMTP. Falls back to console log if env vars not set."""
+    if not EMAIL_FROM or not EMAIL_PASSWORD:
+        print(f'[OTP DEBUG] OTP for {to_email}: {otp}')  # dev fallback
+        return True
+    try:
+        body = f"""Hi,
+
+Your Zyra Music password reset OTP is:
+
+  {otp}
+
+This code expires in 10 minutes.
+If you did not request this, please ignore this email.
+
+— The Zyra Music Team
+"""
+        msg = MIMEText(body)
+        msg['Subject'] = 'Zyra Music — Password Reset OTP'
+        msg['From']    = EMAIL_FROM
+        msg['To']      = to_email
+        with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(EMAIL_FROM, EMAIL_PASSWORD)
+            server.send_message(msg)
+        return True
+    except Exception as e:
+        print(f'Email send error: {e}')
+        return False
+
+
+@app.route('/api/auth/forgot-password', methods=['POST'])
+def forgot_password():
+    data  = request.get_json() or {}
+    email = data.get('email', '').strip().lower()
+    if not email:
+        return jsonify({'success': False, 'error': 'Email required'})
+    user = db_get_user_by_email(email)
+    # Don't reveal whether email exists — always return success
+    if user:
+        otp = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+        _otp_store[email] = {
+            'otp': otp, 'user_id': user['id'],
+            'expires_at': time.time() + OTP_EXPIRY_SECONDS, 'verified': False,
+        }
+        send_otp_email(email, otp)
+    return jsonify({'success': True, 'message': 'If this email is registered, an OTP has been sent.'})
+
+
+@app.route('/api/auth/verify-otp', methods=['POST'])
+def verify_otp():
+    data  = request.get_json() or {}
+    email = data.get('email', '').strip().lower()
+    otp   = data.get('otp',   '').strip()
+    if not email or not otp:
+        return jsonify({'success': False, 'error': 'Email and OTP required'})
+    stored = _otp_store.get(email)
+    if not stored:
+        return jsonify({'success': False, 'error': 'No OTP requested. Please try again.'})
+    if time.time() > stored['expires_at']:
+        _otp_store.pop(email, None)
+        return jsonify({'success': False, 'error': 'OTP expired. Please request a new one.'})
+    if stored['otp'] != otp:
+        return jsonify({'success': False, 'error': 'Invalid OTP. Please try again.'})
+    stored['verified'] = True
+    return jsonify({'success': True, 'message': 'OTP verified successfully.'})
+
+
+@app.route('/api/auth/reset-password', methods=['POST'])
+def reset_password_route():
+    data         = request.get_json() or {}
+    email        = data.get('email',    '').strip().lower()
+    otp          = data.get('otp',      '').strip()
+    new_password = data.get('password', '').strip()
+    if not email or not otp or not new_password:
+        return jsonify({'success': False, 'error': 'All fields required'})
+    if len(new_password) < 6:
+        return jsonify({'success': False, 'error': 'Password must be at least 6 characters'})
+    stored = _otp_store.get(email)
+    if not stored or not stored.get('verified'):
+        return jsonify({'success': False, 'error': 'Please verify OTP first'})
+    if time.time() > stored['expires_at']:
+        _otp_store.pop(email, None)
+        return jsonify({'success': False, 'error': 'Session expired. Please start again.'})
+    if stored['otp'] != otp:
+        return jsonify({'success': False, 'error': 'OTP mismatch. Please verify OTP again.'})
+    db_update_user(stored['user_id'], password_hash=hash_password(new_password))
+    _otp_store.pop(email, None)
+    return jsonify({'success': True, 'message': 'Password reset successfully! You can now login.'})
+
 # ─── User Data Routes ─────────────────────────────────────────────────────────
 
 import json as _json
@@ -984,10 +1153,11 @@ def autoplay():
     query   = get_query_for_mood(user_mood)
     results = get_cached_search(query)
     if not results:
-        # JioSaavn is fast and reliable for Hindi mood queries
-        results = jiosaavn_search(query)
+        # saavn.dev returns direct CDN URLs — faster playback start
+        results = saavn_dev_search(query, limit=20)
         if not results:
-            # Fallback to YouTube if JioSaavn fails
+            results = jiosaavn_search(query)
+        if not results:
             results = youtube_search_songs(query, max_results=10)
         if results:
             set_cached_search(query, results)
@@ -1014,8 +1184,10 @@ def recommendations_queue():
     query   = get_query_for_mood(mood)
     results = get_cached_search(query)
     if not results:
-        # JioSaavn is fast + reliable for mood queries — powers the Up Next queue
-        results = jiosaavn_search(query)
+        # saavn.dev returns direct CDN URLs — faster queue start
+        results = saavn_dev_search(query, limit=20)
+        if not results:
+            results = jiosaavn_search(query)
         if not results:
             results = youtube_search_songs(query, max_results=10)
         if results:
@@ -1031,25 +1203,42 @@ def recommendations_queue():
 
 @app.route('/api/search', methods=['GET'])
 def search():
-    """Search songs via saavn.dev (BlackHole API) → JioSaavn fallback → YouTube."""
+    """Search songs via saavn.dev → JioSaavn fallback → YouTube. Also returns albums for movie searches."""
     query = request.args.get('query', '').strip()
     if not query:
         return jsonify({'success': False, 'error': 'No query provided'})
-    cached = get_cached_search(query)
+
+    cached        = get_cached_search(query)
+    cached_albums = get_cached_search(f'albums:{query}')
     if cached is not None:
-        return jsonify({'success': True, 'data': {'results': cached}})
+        return jsonify({'success': True, 'data': {'results': cached, 'albums': cached_albums or []}})
+
     try:
-        # ── Primary: saavn.dev (BlackHole-compatible API) ──
+        # ── Song results ──
         results = saavn_dev_search(query, limit=20)
         if not results:
-            # ── Fallback 1: direct JioSaavn API ──
             results = jiosaavn_search(query)
         if not results:
-            # ── Fallback 2: YouTube ──
             results = youtube_search_songs(query, max_results=15)
         if results:
             set_cached_search(query, results)
-        return jsonify({'success': True, 'data': {'results': results}})
+
+        # ── Album/movie results (for grouping) ──
+        albums_out = []
+        album_candidates = saavn_dev_album_search(query, limit=4)
+        for alb in album_candidates:
+            songs = saavn_dev_album_songs(alb['id'])
+            if songs:
+                albums_out.append({
+                    'id':    alb['id'],
+                    'name':  alb['name'],
+                    'image': alb['image'],
+                    'songs': songs,
+                })
+        if albums_out:
+            set_cached_search(f'albums:{query}', albums_out)
+
+        return jsonify({'success': True, 'data': {'results': results, 'albums': albums_out}})
     except Exception as e:
         print(f'Search error: {e}')
         return jsonify({'success': False, 'error': str(e)})
@@ -1285,46 +1474,6 @@ def stream_audio():
         return Response(generate(), status=status, headers=resp_headers)
     except Exception as e:
         return f'Streaming error: {str(e)}', 500
-
-
-@app.route('/api/stream_url', methods=['GET'])
-def get_stream_url_only():
-    """
-    Returns the resolved direct audio URL as JSON — NO proxying.
-    The app uses this to get the CDN URL and pass it directly to RNTP,
-    eliminating the backend proxy hop and cutting playback start time from ~15s to ~2s.
-    """
-    song_id = request.args.get('id',     '').strip()
-    title   = request.args.get('title',  '').strip()
-    artist  = request.args.get('artist', '').strip()
-    if not song_id:
-        return jsonify({'success': False, 'error': 'Missing song id'}), 400
-
-    if song_id.startswith('yt_'):
-        yt_id = song_id[3:]
-        # Try Invidious first (fast, cached)
-        instance, itag = get_invidious_audio(yt_id)
-        if instance and itag:
-            url = f'{instance}/latest_version?id={yt_id}&itag={itag}&local=true'
-            return jsonify({'success': True, 'url': url, 'source': 'youtube_invidious'})
-        # Try cached yt-dlp result
-        cache_key = f'{title.lower().strip()}|{artist.lower().strip()}' if title else yt_id
-        audio_url = get_cached_yt_url(cache_key)
-        if audio_url:
-            return jsonify({'success': True, 'url': audio_url, 'source': 'youtube_ytdlp'})
-        # Fall back to proxy stream endpoint for yt-dlp extraction
-        proxy_url = request.host_url.rstrip('/') + f'/api/stream?id={song_id}&title={title}&artist={artist}'
-        return jsonify({'success': True, 'url': proxy_url, 'source': 'youtube_proxy'})
-    else:
-        # JioSaavn — try saavn.dev (cached 320kbps CDN URL)
-        audio_url = saavn_dev_get_song_url(song_id)
-        if not audio_url:
-            audio_url = jiosaavn_get_audio_url(song_id)
-        if audio_url:
-            return jsonify({'success': True, 'url': audio_url, 'source': 'jiosaavn'})
-        # Final fallback: proxy stream endpoint
-        proxy_url = request.host_url.rstrip('/') + f'/api/stream?id={song_id}&title={title}&artist={artist}'
-        return jsonify({'success': True, 'url': proxy_url, 'source': 'proxy_fallback'})
 
 
 @app.route('/api/refresh', methods=['GET'])
