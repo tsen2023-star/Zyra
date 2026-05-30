@@ -31,12 +31,17 @@ export default function App() {
 
   // ── Auth ──
   const [isLoggedIn, setIsLoggedIn]   = useState(false);
-  const [authMode, setAuthMode]       = useState<'login'|'signup'>('login');
+  const [authMode, setAuthMode]       = useState<'login'|'signup'|'forgot'|'verify_otp'|'reset_password'>('login');
   const [email, setEmail]             = useState('');
   const [username, setUsername]       = useState('');
   const [password, setPassword]       = useState('');
   const [userToken, setUserToken]     = useState<string|null>(null);
   const [userId, setUserId]           = useState<string|null>(null);
+  // Forgot-password / OTP flow
+  const [otpValue,       setOtpValue]       = useState('');
+  const [resetEmail,     setResetEmail]     = useState('');
+  const [newPassword,    setNewPassword]    = useState('');
+  const [confirmPassword,setConfirmPassword]= useState('');
 
   // ── Navigation ──
   const [currentScreen, setCurrentScreen] = useState('all_songs');
@@ -76,6 +81,10 @@ export default function App() {
   const [autoplayQueue,   setAutoplayQueue]   = useState<any[]>([]);
   const [shakeEnabled,    setShakeEnabled]    = useState(false);
 
+  // ── Album / Movie search grouping ──
+  const [albumResults,    setAlbumResults]    = useState<any[]>([]);
+  const [expandedAlbumId, setExpandedAlbumId] = useState<string|null>(null);
+
   // ── Artists ──
   const [topArtists,    setTopArtists]    = useState<any[]>([]);
   const [activeArtist,  setActiveArtist]  = useState<any>(null);
@@ -95,6 +104,7 @@ export default function App() {
 
   const typingTimeoutRef = useRef<any>(null);
   const playNextRef      = useRef<any>(null);
+  const handleAutoNextRef= useRef<any>(null);  // for shake — genre-smart skip
   // Maps track ID → full song metadata (used by RNTP track-change handler)
   const trackMetaRef     = useRef<Map<string, any>>(new Map());
   // Ref mirror for state values needed inside native event callbacks
@@ -106,9 +116,8 @@ export default function App() {
     downloads:   [] as any[],
   });
   // Refs for BackHandler — avoids stale closure issues with deps array
-  const screenRef      = useRef('all_songs');
-  const fullScreenRef  = useRef(false);
-  const searchQueryRef = useRef(''); // mirrors searchQuery for BackHandler
+  const screenRef     = useRef('all_songs');
+  const fullScreenRef = useRef(false);
 
   // ── Animations ──
   const ring1 = useRef(new Animated.Value(0)).current;
@@ -147,8 +156,8 @@ export default function App() {
           const now = Date.now();
           if (now - lastShakeTime > 1500) {
             lastShakeTime = now;
-            // Always read .current so we get the latest playNext closure
-            if (playNextRef.current) playNextRef.current();
+            // Shake → genre-smart auto-next (NOT queue skip)
+            if (handleAutoNextRef.current) handleAutoNextRef.current();
           }
         }
       });
@@ -254,31 +263,25 @@ export default function App() {
   });
 
   // ─── Keep BackHandler refs in sync with state ────────────────────────────────
-  useEffect(() => { screenRef.current      = currentScreen; }, [currentScreen]);
-  useEffect(() => { fullScreenRef.current  = isFullScreen;  }, [isFullScreen]);
-  useEffect(() => { searchQueryRef.current = searchQuery;   }, [searchQuery]);
+  useEffect(() => { screenRef.current     = currentScreen; }, [currentScreen]);
+  useEffect(() => { fullScreenRef.current = isFullScreen;  }, [isFullScreen]);
 
   // ─── Android hardware back button ────────────────────────────────────────────
-  // Uses refs only — no deps array — so the handler never has a stale closure.
+  // Using refs (not state deps) prevents stale-closure issues where the old
+  // handler fires before React re-registers the new one.
   useEffect(() => {
     const onBack = (): boolean => {
-      // 1. Close full-screen player → stay on current section
+      // 1. Close full-screen player → return to current section
       if (fullScreenRef.current) {
         setIsFullScreen(false);
         return true;
       }
-      // 2. If search results are visible → clear search, stay on Home
-      if (searchQueryRef.current !== '') {
-        setSearchQuery('');
-        setSongsList([]);
-        return true;
-      }
-      // 3. Any sub-section (artist, library, downloads, playlist) → go to Home tab
+      // 2. Any sub-section (artist, library, downloads, playlist) → go to Home tab
       if (screenRef.current !== 'all_songs') {
         setCurrentScreen('all_songs');
         return true;
       }
-      // 4. Already on Home with no search → let Android minimize the app
+      // 3. Already on Home → let Android minimize the app
       return false;
     };
     const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
@@ -287,7 +290,12 @@ export default function App() {
 
   // ─── Search debounce ─────────────────────────────────────────────────────────
   useEffect(() => {
-    if (searchQuery.trim().length === 0) { setSongsList([]); return; }
+    if (searchQuery.trim().length === 0) {
+      setSongsList([]);
+      setAlbumResults([]);
+      setExpandedAlbumId(null);
+      return;
+    }
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => fetchLiveTracks(searchQuery), 500);
     return () => clearTimeout(typingTimeoutRef.current);
@@ -371,6 +379,11 @@ export default function App() {
     setFavorites([]); setPlaylists([]); setDownloads([]);
     trackMetaRef.current.clear();
     await AsyncStorage.multiRemove(['token', 'userId', 'username']);
+  };
+
+  const updateSetting = async (key: string, value: any) => {
+    try { await apiCall('/api/user/settings', 'POST', { [key]: value }); }
+    catch (e) { console.error('updateSetting error', e); }
   };
 
   // ─── Favorites ───────────────────────────────────────────────────────────────
@@ -468,8 +481,14 @@ export default function App() {
       setIsSearching(true);
       const resp = await fetch(`${BACKEND_URL}/api/search?query=${encodeURIComponent(query)}`);
       const json = await resp.json();
-      setSongsList(json.success ? json.data.results : []);
-    } catch (e) { setSongsList([]); }
+      if (json.success) {
+        setSongsList(json.data.results || []);
+        setAlbumResults(json.data.albums   || []);
+      } else {
+        setSongsList([]);
+        setAlbumResults([]);
+      }
+    } catch (e) { setSongsList([]); setAlbumResults([]); }
     finally { setIsSearching(false); }
   };
 
@@ -500,34 +519,19 @@ export default function App() {
     } catch (e) { /* silent */ }
   };
 
-  // ─── Stream URL helper (proxy — used as fallback for queue preload) ──────────
+  // ─── Stream URL helper ───────────────────────────────────────────────────────
   const getStreamUrl = useCallback((song: any): string => {
     const dl = downloads.find((d: any) => d.id === song.id);
     if (dl?.localUri) return dl.localUri;
+    // Use direct CDN URL if pre-included in search/autoplay results (eliminates 15s delay)
+    if (song.url && typeof song.url === 'string' && song.url.startsWith('http')) {
+      return song.url;
+    }
+    // Fallback: backend stream proxy (resolves URL on-demand)
     const te = encodeURIComponent(song.title  || '');
     const ae = encodeURIComponent(song.artist || '');
     return `${BACKEND_URL}/api/stream?id=${song.id}&title=${te}&artist=${ae}`;
   }, [downloads]);
-
-  // ─── Resolve direct CDN URL before handing to RNTP (eliminates proxy hop) ────
-  // Without this, RNTP → backend → saavn.dev adds ~12-15 s of latency.
-  // With this, we pre-fetch the CDN URL so RNTP connects directly.
-  const resolveStreamUrl = useCallback(async (song: any): Promise<string> => {
-    const dl = downloads.find((d: any) => d.id === song.id);
-    if (dl?.localUri) return dl.localUri;
-    try {
-      const te = encodeURIComponent(song.title  || '');
-      const ae = encodeURIComponent(song.artist || '');
-      const resp = await fetch(
-        `${BACKEND_URL}/api/stream_url?id=${song.id}&title=${te}&artist=${ae}`,
-        { signal: AbortSignal.timeout(6000) }
-      );
-      const json = await resp.json();
-      if (json.success && json.url) return json.url;
-    } catch { /* fall through to proxy */ }
-    // Fallback: let backend proxy the stream
-    return getStreamUrl(song);
-  }, [downloads, getStreamUrl]);
 
   // ─── Add up to `limit` songs to RNTP queue ──────────────────────────────────
   const addSongsToQueue = useCallback(async (songs: any[], limitN = 5) => {
@@ -599,17 +603,13 @@ export default function App() {
       setActiveTrack(track);
       if (searchQuery.trim()) saveSearchHistory(searchQuery.trim());
 
-      // Pre-resolve the direct CDN URL before adding to RNTP.
-      // This cuts playback start from ~15s to ~2s by eliminating the backend proxy hop.
-      const directUrl = await resolveStreamUrl(track);
-
-      // Reset queue and add tapped track with the resolved URL
+      // Reset queue and add tapped track first
       await TrackPlayer.reset();
       trackMetaRef.current.clear();
       trackMetaRef.current.set(String(track.id), track);
       await TrackPlayer.add({
         id:      String(track.id),
-        url:     directUrl,
+        url:     getStreamUrl(track),
         title:   track.title  || '',
         artist:  track.artist || '',
         artwork: track.image  || '',
@@ -617,33 +617,33 @@ export default function App() {
       await TrackPlayer.play();
       setIsLoading(false);
 
-      // ── Post to history + detect mood, then immediately add same-genre songs ──
-      // NOTE: We do NOT add next search-results songs to the queue here.
-      // Instead we wait for mood detection then add same-genre songs, so that
-      // skipping always plays a same-genre song — not the next search result.
+      // ── In background: add next songs from current list ──
+      const list = getActiveList();
+      if (list.length > 0) {
+        const idx = list.findIndex((s: any) => s.id === track.id);
+        const nextSongs = idx >= 0 ? list.slice(idx + 1, idx + 6) : [];
+        if (nextSongs.length > 0) {
+          addSongsToQueue(nextSongs, 5);
+        }
+      }
+
+      // ── Post to history + detect mood → use to refresh genre queue ──
       if (userToken) {
         apiCall('/api/user/history', 'POST', {
           id: track.id, title: track.title,
           artist: track.artist, image: track.image,
-        }).then(async json => {
+        }).then(json => {
           if (json.success) {
             const mood = json.mood || 'default';
             setCurrentMood(mood);
             setAutoplayReason('');
-            // Immediately fill queue with same-genre songs so skip plays genre match
-            try {
-              const qs  = `songId=${track.id}&userId=${userId||''}&mood=${mood}`;
-              const res = await fetch(`${BACKEND_URL}/api/recommendations/queue?${qs}`);
-              const qj  = await res.json();
-              if (qj.success && qj.queue?.length > 0) {
-                await addSongsToQueue(qj.queue, 5);
-              }
-            } catch { /* silent — prefillQueue will handle it when queue runs low */ }
+            // Eagerly pre-fill queue with same-genre songs in background
+            fetchQueue(track.id, mood).then(() => {
+              // autoplayQueue state will update via setAutoplayQueue;
+              // addSongsToQueue is called when queue runs low (PlaybackTrackChanged event)
+            });
           }
         }).catch(() => {});
-      } else {
-        // Not logged in — still add same-genre songs for autoplay
-        prefillQueue();
       }
     } catch (e: any) {
       console.error('Playback error:', e);
@@ -708,7 +708,7 @@ export default function App() {
     }
   };
 
-  // Assign playNextRef in render body — always fresh for shake handler
+  // Assign playNextRef in render body — always fresh for shake + RNTP handlers
   playNextRef.current = playNext;
 
   // ─── Genre-smart auto-next (called when queue runs empty) ────────────────────
@@ -736,6 +736,9 @@ export default function App() {
       if (json.success && json.data?.song) { await handleTrackPress(json.data.song); }
     } catch { /* silent */ }
   };
+  // handleAutoNextRef assigned AFTER definition so the closure is valid
+  handleAutoNextRef.current = handleAutoNext;
+
 
   // ─── Theme ───────────────────────────────────────────────────────────────────
   const theme = {
@@ -786,30 +789,139 @@ export default function App() {
   );
 
   // ─── Auth screen ─────────────────────────────────────────────────────────────
-  if (!isLoggedIn) return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.authContainer}>
-      <StatusBar barStyle="light-content" />
-      <View style={styles.authBox}>
-        <Ionicons name="pulse" size={64} color="#00ffcc" style={{ marginBottom: 20 }} />
-        <Text style={styles.authTitle}>ZYRA</Text>
-        <Text style={styles.authSubtitle}>{authMode === 'login' ? 'Sign in to continue' : 'Create your account'}</Text>
+  if (!isLoggedIn) {
+    // ── Forgot password: send OTP ──
+    const handleForgotPassword = async () => {
+      if (!resetEmail) { Alert.alert('Error', 'Please enter your email.'); return; }
+      setIsLoading(true);
+      try {
+        const resp = await fetch(`${BACKEND_URL}/api/auth/forgot-password`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: resetEmail.trim().toLowerCase() }),
+        });
+        const json = await resp.json();
+        if (json.success) { Alert.alert('OTP Sent ✉️', json.message); setAuthMode('verify_otp'); }
+        else Alert.alert('Error', json.error || 'Failed to send OTP');
+      } catch { Alert.alert('Error', 'Network error. Try again.'); }
+      finally { setIsLoading(false); }
+    };
 
-        {authMode === 'signup' && (
-          <TextInput style={styles.authInput} placeholder="Username" placeholderTextColor="#666" value={username} onChangeText={setUsername} autoCapitalize="none" />
-        )}
-        <TextInput style={styles.authInput} placeholder="Email" placeholderTextColor="#666" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
-        <TextInput style={styles.authInput} placeholder="Password" placeholderTextColor="#666" secureTextEntry value={password} onChangeText={setPassword} />
+    // ── Verify OTP ──
+    const handleVerifyOtp = async () => {
+      if (!otpValue || otpValue.length !== 6) { Alert.alert('Error', 'Please enter the 6-digit OTP.'); return; }
+      setIsLoading(true);
+      try {
+        const resp = await fetch(`${BACKEND_URL}/api/auth/verify-otp`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: resetEmail, otp: otpValue }),
+        });
+        const json = await resp.json();
+        if (json.success) { Alert.alert('Verified ✅', json.message); setAuthMode('reset_password'); }
+        else Alert.alert('Error', json.error || 'OTP verification failed');
+      } catch { Alert.alert('Error', 'Network error. Try again.'); }
+      finally { setIsLoading(false); }
+    };
 
-        <TouchableOpacity style={styles.authBtn} onPress={handleAuth} disabled={isLoading}>
-          {isLoading ? <ActivityIndicator color="#050515" /> : <Text style={styles.authBtnText}>{authMode === 'login' ? 'LOGIN' : 'SIGN UP'}</Text>}
-        </TouchableOpacity>
+    // ── Reset password ──
+    const handleResetPassword = async () => {
+      if (!newPassword || newPassword.length < 6) { Alert.alert('Error', 'Password must be at least 6 characters.'); return; }
+      if (newPassword !== confirmPassword) { Alert.alert('Error', 'Passwords do not match.'); return; }
+      setIsLoading(true);
+      try {
+        const resp = await fetch(`${BACKEND_URL}/api/auth/reset-password`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: resetEmail, otp: otpValue, password: newPassword }),
+        });
+        const json = await resp.json();
+        if (json.success) {
+          Alert.alert('Success 🎉', json.message);
+          setAuthMode('login'); setOtpValue(''); setResetEmail(''); setNewPassword(''); setConfirmPassword('');
+        } else Alert.alert('Error', json.error || 'Password reset failed');
+      } catch { Alert.alert('Error', 'Network error. Try again.'); }
+      finally { setIsLoading(false); }
+    };
 
-        <TouchableOpacity onPress={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')} style={{ marginTop: 20 }}>
-          <Text style={styles.authSwitchText}>{authMode === 'login' ? "Don't have an account? Sign Up" : "Already have an account? Login"}</Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
-  );
+    return (
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.authContainer}>
+        <StatusBar barStyle="light-content" />
+        <View style={styles.authBox}>
+          <Ionicons name="pulse" size={64} color="#00ffcc" style={{ marginBottom: 20 }} />
+          <Text style={styles.authTitle}>ZYRA</Text>
+
+          {/* ── LOGIN ── */}
+          {authMode === 'login' && (<>
+            <Text style={styles.authSubtitle}>Sign in to continue</Text>
+            <TextInput style={styles.authInput} placeholder="Email" placeholderTextColor="#666" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
+            <TextInput style={styles.authInput} placeholder="Password" placeholderTextColor="#666" secureTextEntry value={password} onChangeText={setPassword} />
+            <TouchableOpacity style={styles.authBtn} onPress={handleAuth} disabled={isLoading}>
+              {isLoading ? <ActivityIndicator color="#050515" /> : <Text style={styles.authBtnText}>LOGIN</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => { setResetEmail(email); setAuthMode('forgot'); }} style={{ marginTop: 14 }}>
+              <Text style={{ color: '#8e8e93', fontSize: 14 }}>Forgot Password?</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setAuthMode('signup')} style={{ marginTop: 14 }}>
+              <Text style={styles.authSwitchText}>Don't have an account? Sign Up</Text>
+            </TouchableOpacity>
+          </>)}
+
+          {/* ── SIGNUP ── */}
+          {authMode === 'signup' && (<>
+            <Text style={styles.authSubtitle}>Create your account</Text>
+            <TextInput style={styles.authInput} placeholder="Username" placeholderTextColor="#666" value={username} onChangeText={setUsername} autoCapitalize="none" />
+            <TextInput style={styles.authInput} placeholder="Email" placeholderTextColor="#666" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
+            <TextInput style={styles.authInput} placeholder="Password" placeholderTextColor="#666" secureTextEntry value={password} onChangeText={setPassword} />
+            <TouchableOpacity style={styles.authBtn} onPress={handleAuth} disabled={isLoading}>
+              {isLoading ? <ActivityIndicator color="#050515" /> : <Text style={styles.authBtnText}>SIGN UP</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setAuthMode('login')} style={{ marginTop: 20 }}>
+              <Text style={styles.authSwitchText}>Already have an account? Login</Text>
+            </TouchableOpacity>
+          </>)}
+
+          {/* ── FORGOT PASSWORD: enter email ── */}
+          {authMode === 'forgot' && (<>
+            <Text style={styles.authSubtitle}>Enter your registered email</Text>
+            <TextInput style={styles.authInput} placeholder="Email" placeholderTextColor="#666" value={resetEmail} onChangeText={setResetEmail} autoCapitalize="none" keyboardType="email-address" />
+            <TouchableOpacity style={styles.authBtn} onPress={handleForgotPassword} disabled={isLoading}>
+              {isLoading ? <ActivityIndicator color="#050515" /> : <Text style={styles.authBtnText}>SEND OTP</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setAuthMode('login')} style={{ marginTop: 20 }}>
+              <Text style={styles.authSwitchText}>← Back to Login</Text>
+            </TouchableOpacity>
+          </>)}
+
+          {/* ── VERIFY OTP ── */}
+          {authMode === 'verify_otp' && (<>
+            <Text style={styles.authSubtitle}>Enter the 6-digit OTP sent to</Text>
+            <Text style={{ color: '#00ffcc', fontSize: 13, marginBottom: 16 }}>{resetEmail}</Text>
+            <TextInput style={styles.authInput} placeholder="6-digit OTP" placeholderTextColor="#666" value={otpValue} onChangeText={setOtpValue} keyboardType="number-pad" maxLength={6} />
+            <TouchableOpacity style={styles.authBtn} onPress={handleVerifyOtp} disabled={isLoading}>
+              {isLoading ? <ActivityIndicator color="#050515" /> : <Text style={styles.authBtnText}>VERIFY OTP</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleForgotPassword} style={{ marginTop: 14 }}>
+              <Text style={{ color: '#8e8e93', fontSize: 14 }}>Resend OTP</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setAuthMode('login')} style={{ marginTop: 14 }}>
+              <Text style={styles.authSwitchText}>← Back to Login</Text>
+            </TouchableOpacity>
+          </>)}
+
+          {/* ── RESET PASSWORD ── */}
+          {authMode === 'reset_password' && (<>
+            <Text style={styles.authSubtitle}>Create a new password</Text>
+            <TextInput style={styles.authInput} placeholder="New Password" placeholderTextColor="#666" secureTextEntry value={newPassword} onChangeText={setNewPassword} />
+            <TextInput style={styles.authInput} placeholder="Confirm Password" placeholderTextColor="#666" secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} />
+            <TouchableOpacity style={styles.authBtn} onPress={handleResetPassword} disabled={isLoading}>
+              {isLoading ? <ActivityIndicator color="#050515" /> : <Text style={styles.authBtnText}>RESET PASSWORD</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setAuthMode('login')} style={{ marginTop: 20 }}>
+              <Text style={styles.authSwitchText}>← Back to Login</Text>
+            </TouchableOpacity>
+          </>)}
+        </View>
+      </KeyboardAvoidingView>
+    );
+  }
 
   // ─── Main App ────────────────────────────────────────────────────────────────
   const moodColor = MOOD_COLORS[currentMood] || '#00ffcc';
@@ -877,6 +989,42 @@ export default function App() {
             {/* When searching — show results */}
             {searchQuery.trim().length > 0 ? (
               <>
+                {/* Album / Movie groups */}
+                {albumResults.length > 0 && (
+                  <>
+                    <Text style={[styles.sectionHeader, { color: '#00ffcc' }]}>🎬 Albums / Movies</Text>
+                    {albumResults.map(album => (
+                      <View key={album.id} style={{ marginBottom: 8 }}>
+                        <TouchableOpacity
+                          style={[styles.trackCard, { backgroundColor: theme.card, borderColor: '#00ffcc33' }]}
+                          onPress={() => setExpandedAlbumId(expandedAlbumId === album.id ? null : album.id)}
+                        >
+                          <View style={{ width: 48, height: 48, borderRadius: 24, overflow: 'hidden', backgroundColor: theme.surface, justifyContent: 'center', alignItems: 'center', marginRight: 15 }}>
+                            {album.image ? (
+                              <Image source={{ uri: album.image }} style={{ width: 48, height: 48 }} />
+                            ) : (
+                              <Ionicons name="film-outline" size={24} color="#00ffcc" />
+                            )}
+                          </View>
+                          <View style={styles.trackInfo}>
+                            <Text numberOfLines={1} style={[styles.trackTitle, { color: '#00ffcc' }]}>{album.name}</Text>
+                            <Text style={[styles.trackArtist, { color: theme.subtext }]}>{album.songs.length} songs</Text>
+                          </View>
+                          <Ionicons
+                            name={expandedAlbumId === album.id ? 'chevron-up' : 'chevron-down'}
+                            size={20} color="#00ffcc" style={{ marginRight: 4 }}
+                          />
+                        </TouchableOpacity>
+                        {expandedAlbumId === album.id && (
+                          <View style={{ paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: '#00ffcc33', marginLeft: 16, marginTop: 4 }}>
+                            {album.songs.map((song: any) => renderTrackCard(song, activeTrack?.id === song.id, isTrackFavorite(song.id)))}
+                          </View>
+                        )}
+                      </View>
+                    ))}
+                    <View style={{ height: 1, backgroundColor: theme.border, marginBottom: 16 }} />
+                  </>
+                )}
                 <Text style={styles.sectionHeader}>Results</Text>
                 <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
                   {songsList.map(song => renderTrackCard(song, activeTrack?.id === song.id, isTrackFavorite(song.id)))}
