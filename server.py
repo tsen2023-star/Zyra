@@ -906,15 +906,18 @@ def forgot_password():
     if not email:
         return jsonify({'success': False, 'error': 'Email required'})
     user = db_get_user_by_email(email)
-    # Don't reveal whether email exists — always return success
-    if user:
-        otp = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
-        _otp_store[email] = {
-            'otp': otp, 'user_id': user['id'],
-            'expires_at': time.time() + OTP_EXPIRY_SECONDS, 'verified': False,
-        }
-        send_otp_email(email, otp)
-    return jsonify({'success': True, 'message': 'If this email is registered, an OTP has been sent.'})
+    # Immediately tell the user if the email is not registered
+    if not user:
+        return jsonify({'success': False, 'error': 'This email is not registered. Please sign up first.'})
+    otp = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+    _otp_store[email] = {
+        'otp': otp, 'user_id': user['id'],
+        'expires_at': time.time() + OTP_EXPIRY_SECONDS, 'verified': False,
+    }
+    # Send email in background so the API returns instantly (prevents timeout)
+    import threading
+    threading.Thread(target=send_otp_email, args=(email, otp), daemon=True).start()
+    return jsonify({'success': True, 'message': 'OTP sent to your email. Please check your inbox.'})
 
 
 @app.route('/api/auth/verify-otp', methods=['POST'])
@@ -1431,13 +1434,19 @@ def stream_audio():
         audio_url = saavn_dev_get_song_url(song_id)
         source    = 'jiosaavn'
 
-        # 2️⃣  Legacy JioSaavn DES fallback
-        if not audio_url:
-            print(f'saavn.dev failed for {song_id} — trying legacy JioSaavn')
-            audio_url = jiosaavn_get_audio_url(song_id)
+        # 2️⃣  For JioSaavn: 302 redirect directly to CDN (no proxying = instant playback)
+        if audio_url:
+            print(f'JioSaavn CDN redirect: {song_id}')
+            return redirect(audio_url, code=302)
 
-        # 3️⃣  Auto-fallback to YouTube if JioSaavn returned nothing
-        if not audio_url and title:
+        # 3️⃣  Legacy JioSaavn DES fallback
+        print(f'saavn.dev failed for {song_id} — trying legacy JioSaavn')
+        audio_url = jiosaavn_get_audio_url(song_id)
+        if audio_url:
+            return redirect(audio_url, code=302)
+
+        # 4️⃣  Auto-fallback to YouTube if JioSaavn returned nothing
+        if title:
             print(f'JioSaavn failed for {song_id} — trying YouTube fallback')
             audio_url = youtube_get_audio_url(title, artist)
             source    = 'youtube'
@@ -1445,8 +1454,8 @@ def stream_audio():
     if not audio_url:
         return 'Could not resolve audio URL from JioSaavn or YouTube', 404
 
+    # YouTube: must proxy (direct URL returns 403 from mobile clients)
     try:
-        # Proxy the audio stream through the server — bypasses YouTube 403 errors
         range_header = request.headers.get('Range', 'bytes=0-')
         proxy_headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -1455,14 +1464,11 @@ def stream_audio():
         }
         if range_header:
             proxy_headers['Range'] = range_header
-
         req = http_requests.get(audio_url, stream=True, headers=proxy_headers, timeout=30)
-
         def generate():
             for chunk in req.iter_content(chunk_size=65536):
                 if chunk:
                     yield chunk
-
         resp_headers = {
             'Content-Type':  req.headers.get('Content-Type', 'audio/mpeg'),
             'Accept-Ranges': 'bytes',
@@ -1483,6 +1489,85 @@ def refresh_url():
         return jsonify({'success': False, 'error': 'No id provided'})
     url_cache.pop(song_id, None)
     return jsonify({'success': True, 'data': {'url': f"{request.host_url}api/stream?id={song_id}"}})
+
+
+# ─── Trending Charts ──────────────────────────────────────────────────────────
+
+@app.route('/api/trending', methods=['GET'])
+def get_trending():
+    """Return top trending songs (uses saavn.dev chart/top songs)."""
+    try:
+        # Use saavn.dev to get chart songs (top 20 trending)
+        r = http_requests.get(
+            f'{SAAVNDEV_BASE}/api/charts',
+            timeout=10,
+        )
+        charts = []
+        if r.status_code == 200:
+            data = r.json()
+            charts_data = data.get('data', [])
+            if charts_data:
+                # Pick the first chart (usually top songs)
+                first_chart_id = charts_data[0].get('id', '') if isinstance(charts_data, list) else ''
+                if first_chart_id:
+                    r2 = http_requests.get(f'{SAAVNDEV_BASE}/api/playlists', params={'id': first_chart_id, 'limit': 20}, timeout=10)
+                    if r2.status_code == 200:
+                        pdata = r2.json()
+                        songs_raw = (pdata.get('data') or {}).get('songs', [])
+                        for song in songs_raw[:20]:
+                            sid = song.get('id', '')
+                            if not sid: continue
+                            artists = song.get('artists', {})
+                            primary = artists.get('primary', [])
+                            artist = ', '.join([a['name'] for a in primary if a.get('name')])
+                            title = clean_html(song.get('name', '') or 'Unknown')
+                            image = _sd_best_image(song.get('image', []))
+                            url   = _sd_best_url(song.get('downloadUrl', []))
+                            charts.append({'id': sid, 'title': title, 'artist': artist, 'image': image, 'url': url or None, 'source': 'jiosaavn'})
+        # Fallback: search for generic trending Bollywood
+        if not charts:
+            charts = saavn_dev_search('top bollywood songs 2024', limit=20)
+        return jsonify({'success': True, 'songs': charts})
+    except Exception as e:
+        print(f'Trending error: {e}')
+        # Always return something
+        fallback = saavn_dev_search('top hindi songs', limit=20)
+        return jsonify({'success': True, 'songs': fallback})
+
+
+# ─── Lyrics ───────────────────────────────────────────────────────────────────
+
+@app.route('/api/lyrics', methods=['GET'])
+def get_lyrics():
+    """Fetch lyrics from lyrics.ovh (free, no API key needed)."""
+    title  = request.args.get('title',  '').strip()
+    artist = request.args.get('artist', '').strip()
+    if not title or not artist:
+        return jsonify({'success': False, 'error': 'title and artist required'})
+    try:
+        # Clean title (remove feat., remix, etc for better match)
+        clean_title  = re.sub(r'\s*\(.*?\)', '', title).strip()
+        clean_artist = artist.split(',')[0].strip()  # use primary artist only
+        r = http_requests.get(
+            f'https://api.lyrics.ovh/v1/{clean_artist}/{clean_title}',
+            timeout=8,
+        )
+        if r.status_code == 200:
+            data = r.json()
+            lyrics = data.get('lyrics', '')
+            if lyrics:
+                return jsonify({'success': True, 'lyrics': lyrics.strip()})
+        # Fallback: try with original title
+        r2 = http_requests.get(f'https://api.lyrics.ovh/v1/{artist}/{title}', timeout=8)
+        if r2.status_code == 200:
+            data2 = r2.json()
+            lyrics2 = data2.get('lyrics', '')
+            if lyrics2:
+                return jsonify({'success': True, 'lyrics': lyrics2.strip()})
+        return jsonify({'success': False, 'error': 'Lyrics not found'})
+    except Exception as e:
+        print(f'Lyrics error: {e}')
+        return jsonify({'success': False, 'error': str(e)})
 
 
 if __name__ == '__main__':
