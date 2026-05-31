@@ -1082,6 +1082,17 @@ def add_history(user):
     return jsonify({'success': True, 'mood': mood, 'mood_label': MOOD_LABELS.get(mood, '')})
 
 
+@app.route('/api/user/history/<song_id>', methods=['DELETE'])
+@user_required
+def delete_history(user, song_id):
+    """Remove a specific song from the user's play history."""
+    history = user.get('history') or []
+    history = [h for h in history if h.get('id') != song_id]
+    db_update_user(user['id'], history=_json.dumps(history))
+    # Return newest-first, same as GET
+    return jsonify({'success': True, 'data': {'history': history[-50:][::-1]}})
+
+
 @app.route('/api/user/downloads', methods=['GET'])
 @user_required
 def get_downloads(user):
