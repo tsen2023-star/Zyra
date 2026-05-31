@@ -1384,13 +1384,25 @@ def artist_tracks():
 
 
 
+@app.route('/ping', methods=['GET'])
+def ping():
+    """Keep-alive endpoint — frontend pings this every 4 min to prevent Render cold starts."""
+    return jsonify({'ok': True})
+
+
 @app.route('/api/stream', methods=['GET'])
 def stream_audio():
-    song_id = request.args.get('id',     '').strip()
-    title   = request.args.get('title',  '').strip()
-    artist  = request.args.get('artist', '').strip()
+    song_id    = request.args.get('id',     '').strip()
+    title      = request.args.get('title',  '').strip()
+    artist     = request.args.get('artist', '').strip()
+    direct_url = request.args.get('url',    '').strip()   # ← fresh CDN URL from search results
     if not song_id:
         return 'Missing song id', 400
+
+    # ⚡ INSTANT PATH: frontend already has a fresh CDN URL — just redirect, no API calls needed
+    if direct_url and direct_url.startswith('https://') and 'saavncdn' in direct_url:
+        print(f'Instant CDN redirect (pre-resolved): {song_id}')
+        return redirect(direct_url, code=302)
 
     audio_url = ''
     source    = 'jiosaavn'
