@@ -2,12 +2,12 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity,
   Switch, StatusBar, ActivityIndicator, Modal, KeyboardAvoidingView,
-  Platform, Alert, Animated, Easing, Image, BackHandler
+  Platform, Animated, Easing, Image, BackHandler, Share,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import TrackPlayer, {
   Capability, Event, State, AppKilledPlaybackBehavior,
-  usePlaybackState, useProgress, useTrackPlayerEvents,
+  usePlaybackState, useProgress, useTrackPlayerEvents, RepeatMode,
 } from 'react-native-track-player';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
@@ -26,8 +26,33 @@ const MOOD_COLORS: Record<string, string> = {
   default:   '#00ffcc',
 };
 
+// ─── ZyraAlert ────────────────────────────────────────────────────────────────
+interface AlertButton { text: string; onPress?: () => void; style?: 'cancel' | 'destructive' | 'default'; }
+interface ZyraAlertProps { visible: boolean; title: string; message: string; buttons: AlertButton[]; onDismiss: () => void; }
+function ZyraAlert({ visible, title, message, buttons, onDismiss }: ZyraAlertProps) {
+  return (
+    <Modal transparent animationType="fade" visible={visible} onRequestClose={onDismiss} statusBarTranslucent>
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.78)', justifyContent: 'center', alignItems: 'center', padding: 30 }}>
+        <View style={{ width: '100%', backgroundColor: '#09091a', borderRadius: 22, borderWidth: 1.5, borderColor: '#00ffcc55', padding: 28, alignItems: 'center' }}>
+          <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: '#00ffcc18', borderWidth: 2, borderColor: '#00ffcc88', justifyContent: 'center', alignItems: 'center', marginBottom: 18 }}>
+            <Ionicons name="pulse" size={32} color="#00ffcc" />
+          </View>
+          <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 10, textAlign: 'center' }}>{title}</Text>
+          <Text style={{ color: '#aaa', fontSize: 13, textAlign: 'center', lineHeight: 20, marginBottom: 22, textTransform: 'uppercase', letterSpacing: 0.4 }}>{message}</Text>
+          {buttons.map((btn, i) => (
+            <TouchableOpacity key={i} onPress={() => { onDismiss(); btn.onPress?.(); }}
+              style={{ width: '80%', height: 46, borderRadius: 23, marginBottom: i < buttons.length - 1 ? 10 : 0, backgroundColor: btn.style === 'cancel' ? 'transparent' : btn.style === 'destructive' ? '#ff4444' : '#00ffcc', borderWidth: btn.style === 'cancel' ? 1 : 0, borderColor: '#333', justifyContent: 'center', alignItems: 'center' }}>
+              <Text style={{ color: btn.style === 'cancel' ? '#aaa' : '#050515', fontWeight: 'bold', fontSize: 14, letterSpacing: 1 }}>{btn.text}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export default function App() {
-  const [isAppReady, setIsAppReady]   = useState(false);
+  const [isAppReady, setIsAppReady] = useState(false);
 
   // ── Auth ──
   const [isLoggedIn, setIsLoggedIn]   = useState(false);
@@ -37,16 +62,15 @@ export default function App() {
   const [password, setPassword]       = useState('');
   const [userToken, setUserToken]     = useState<string|null>(null);
   const [userId, setUserId]           = useState<string|null>(null);
-  // Forgot-password / OTP flow
-  const [otpValue,       setOtpValue]       = useState('');
-  const [resetEmail,     setResetEmail]     = useState('');
-  const [newPassword,    setNewPassword]    = useState('');
-  const [confirmPassword,setConfirmPassword]= useState('');
+  const [otpValue, setOtpValue]             = useState('');
+  const [resetEmail, setResetEmail]         = useState('');
+  const [newPassword, setNewPassword]       = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   // ── Navigation ──
   const [currentScreen, setCurrentScreen] = useState('all_songs');
 
-  // ── User data (synced with MongoDB) ──
+  // ── User data ──
   const [favorites,  setFavorites]  = useState<any[]>([]);
   const [downloads,  setDownloads]  = useState<any[]>([]);
   const [playlists,  setPlaylists]  = useState<{id:string,name:string,songs:any[]}[]>([]);
@@ -59,13 +83,51 @@ export default function App() {
   const [isYoutubeFallback, setIsYoutubeFallback] = useState(false);
   const progressBarWidthRef = useRef<number>(0);
 
-  // ── RNTP derived state (hooks must be at component top level) ──
+  // ── RNTP hooks (must be at top level) ──
   const playerState = usePlaybackState();
   const isPlaying   = playerState.state === State.Playing;
   const { position: posRaw, duration: durRaw } = useProgress(500);
-  // Convert RNTP seconds → milliseconds so existing UI code stays unchanged
   const position = posRaw  * 1000;
   const duration = durRaw  * 1000;
+
+  // ── Repeat & Shuffle ──
+  const [repeatMode, setRepeatMode] = useState<'off'|'all'|'one'>('off');
+  const [isShuffled, setIsShuffled] = useState(false);
+
+  // ── Sleep Timer ──
+  const [sleepTimer,    setSleepTimer]    = useState<number>(0);
+  const [sleepTimerEnd, setSleepTimerEnd] = useState<number>(0);
+  const sleepTimerRef = useRef<any>(null);
+
+  // ── Lyrics ──
+  const [lyrics,         setLyrics]         = useState<string>('');
+  const [lyricsLoading,  setLyricsLoading]  = useState(false);
+  const [showLyrics,     setShowLyrics]     = useState(false);
+
+  // ── Crossfade ──
+  const [crossfadeEnabled, setCrossfadeEnabled] = useState(false);
+
+  // ── Equalizer ──
+  const [showEqualizerModal, setShowEqualizerModal] = useState(false);
+  const [eqBass,   setEqBass]   = useState(0.5);
+  const [eqMid,    setEqMid]    = useState(0.5);
+  const [eqTreble, setEqTreble] = useState(0.5);
+
+  // ── Recently Played ──
+  const [recentlyPlayed, setRecentlyPlayed] = useState<any[]>([]);
+
+  // ── Trending ──
+  const [trendingSongs, setTrendingSongs] = useState<any[]>([]);
+
+  // ── Custom Alert ──
+  const [alertVisible,  setAlertVisible]  = useState(false);
+  const [alertTitle,    setAlertTitle]    = useState('');
+  const [alertMessage,  setAlertMessage]  = useState('');
+  const [alertButtons,  setAlertButtons]  = useState<AlertButton[]>([{ text: 'OK' }]);
+
+  // ── Long-press Context Menu ──
+  const [contextMenuVisible, setContextMenuVisible] = useState(false);
+  const [contextMenuSong,    setContextMenuSong]    = useState<any>(null);
 
   // ── Search ──
   const [searchQuery,    setSearchQuery]    = useState('');
@@ -75,13 +137,13 @@ export default function App() {
   const [isSearchFocused,setIsSearchFocused]= useState(false);
 
   // ── Smart Autoplay ──
-  const [smartAutoplay,   setSmartAutoplay]   = useState(true);
-  const [currentMood,     setCurrentMood]     = useState<string>('default');
-  const [autoplayReason,  setAutoplayReason]  = useState<string>('');
-  const [autoplayQueue,   setAutoplayQueue]   = useState<any[]>([]);
-  const [shakeEnabled,    setShakeEnabled]    = useState(false);
+  const [smartAutoplay,  setSmartAutoplay]  = useState(true);
+  const [currentMood,    setCurrentMood]    = useState<string>('default');
+  const [autoplayReason, setAutoplayReason] = useState<string>('');
+  const [autoplayQueue,  setAutoplayQueue]  = useState<any[]>([]);
+  const [shakeEnabled,   setShakeEnabled]   = useState(false);
 
-  // ── Album / Movie search grouping ──
+  // ── Album / Movie ──
   const [albumResults,    setAlbumResults]    = useState<any[]>([]);
   const [expandedAlbumId, setExpandedAlbumId] = useState<string|null>(null);
 
@@ -102,12 +164,11 @@ export default function App() {
   const [newPlaylistName,        setNewPlaylistName]      = useState('');
   const [isMenuVisible,          setMenuVisible]          = useState(false);
 
-  const typingTimeoutRef = useRef<any>(null);
-  const playNextRef      = useRef<any>(null);
-  const handleAutoNextRef= useRef<any>(null);  // for shake — genre-smart skip
-  // Maps track ID → full song metadata (used by RNTP track-change handler)
-  const trackMetaRef     = useRef<Map<string, any>>(new Map());
-  // Ref mirror for state values needed inside native event callbacks
+  const typingTimeoutRef   = useRef<any>(null);
+  const playNextRef        = useRef<any>(null);
+  const handleAutoNextRef  = useRef<any>(null);
+  const handleShakeNextRef = useRef<any>(null);
+  const trackMetaRef       = useRef<Map<string, any>>(new Map());
   const queueCtxRef = useRef({
     activeTrack: null as any,
     userId:      null as string | null,
@@ -115,7 +176,6 @@ export default function App() {
     currentMood: 'default',
     downloads:   [] as any[],
   });
-  // Refs for BackHandler — avoids stale closure issues with deps array
   const screenRef     = useRef('all_songs');
   const fullScreenRef = useRef(false);
 
@@ -124,7 +184,15 @@ export default function App() {
   const ring2 = useRef(new Animated.Value(0)).current;
   const ring3 = useRef(new Animated.Value(0)).current;
 
-  // ─── Ring animations ────────────────────────────────────────────────────────
+  // ─── Custom Alert Helper ──────────────────────────────────────────────────────
+  const showAlert = useCallback((title: string, message: string, buttons?: AlertButton[]) => {
+    setAlertTitle(title);
+    setAlertMessage(message);
+    setAlertButtons(buttons || [{ text: 'OK' }]);
+    setAlertVisible(true);
+  }, []);
+
+  // ─── Ring animations ─────────────────────────────────────────────────────────
   useEffect(() => {
     let t1: any, t2: any;
     if (isPlaying) {
@@ -140,7 +208,7 @@ export default function App() {
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [isPlaying]);
 
-  // ─── Shake sensor ────────────────────────────────────────────────────────────
+  // ─── Shake sensor (FIXED: calls handleShakeNext not queue skip) ──────────────
   useEffect(() => {
     let subscription: any;
     if (shakeEnabled) {
@@ -148,16 +216,15 @@ export default function App() {
       let lastShakeTime = 0;
       let lastAcc = 0;
       subscription = Accelerometer.addListener(({ x, y, z }) => {
-        const acc = Math.sqrt(x * x + y * y + z * z);
+        const acc   = Math.sqrt(x * x + y * y + z * z);
         const delta = Math.abs(acc - lastAcc);
         lastAcc = acc;
-        // detect sudden jolt (delta > 1.0) — more reliable than raw magnitude
         if (delta > 1.0) {
           const now = Date.now();
           if (now - lastShakeTime > 1500) {
             lastShakeTime = now;
-            // Shake → genre-smart auto-next (NOT queue skip)
-            if (handleAutoNextRef.current) handleAutoNextRef.current();
+            // FIXED: dedicated shake handler — calls smart autoplay API directly
+            if (handleShakeNextRef.current) handleShakeNextRef.current();
           }
         }
       });
@@ -165,7 +232,7 @@ export default function App() {
     return () => { if (subscription) subscription.remove(); };
   }, [shakeEnabled]);
 
-  // ─── Initial load ────────────────────────────────────────────────────────────
+  // ─── Initial load ─────────────────────────────────────────────────────────────
   useEffect(() => {
     const init = async () => {
       try {
@@ -173,65 +240,44 @@ export default function App() {
         const storedUserId   = await AsyncStorage.getItem('userId');
         const storedUsername = await AsyncStorage.getItem('username');
         const storedSH       = await AsyncStorage.getItem('searchHistory');
-
         if (storedSH) setSearchHistory(JSON.parse(storedSH));
-
         if (storedToken && storedUserId) {
           setUserToken(storedToken);
           setUserId(storedUserId);
           setUsername(storedUsername || '');
           setIsLoggedIn(true);
           await loadUserData(storedToken);
+          loadRecentlyPlayed(storedToken);
         }
-      } catch (e) {
-        console.error('Init error', e);
-      } finally {
-        setIsAppReady(true);
-      }
+      } catch (e) { console.error('Init error', e); }
+      finally { setIsAppReady(true); }
     };
     init();
+    // Load trending and top artists in background
+    fetch(`${BACKEND_URL}/api/trending`).then(r => r.json()).then(j => { if (j.success) setTrendingSongs(j.songs || []); }).catch(() => {});
+    fetch(`${BACKEND_URL}/api/artists/top`).then(r => r.json()).then(j => { if (j.success) setTopArtists(j.artists || []); }).catch(() => {});
   }, []);
 
-  // ─── RNTP player setup ───────────────────────────────────────────────────────
+  // ─── RNTP setup ──────────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
-        await TrackPlayer.setupPlayer({
-          minBuffer:  3,
-          maxBuffer:  30,
-          playBuffer: 1,
-        });
+        await TrackPlayer.setupPlayer({ minBuffer: 3, maxBuffer: 30, playBuffer: 1 });
         await TrackPlayer.updateOptions({
-          capabilities: [
-            Capability.Play, Capability.Pause,
-            Capability.SkipToNext, Capability.SkipToPrevious,
-            Capability.Stop, Capability.SeekTo,
-          ],
-          // compactCapabilities = the 3 buttons shown in collapsed notification
+          capabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext, Capability.SkipToPrevious, Capability.Stop, Capability.SeekTo],
           compactCapabilities: [Capability.SkipToPrevious, Capability.Play, Capability.SkipToNext],
-          // notificationCapabilities = buttons visible on lock screen / expanded notification
-          notificationCapabilities: [
-            Capability.Play, Capability.Pause,
-            Capability.SkipToNext, Capability.SkipToPrevious,
-            Capability.Stop,
-          ],
+          notificationCapabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext, Capability.SkipToPrevious, Capability.Stop],
           progressUpdateEventInterval: 1,
-          android: {
-            appKilledPlaybackBehavior: AppKilledPlaybackBehavior.StopPlaybackAndRemoveNotification,
-          },
+          android: { appKilledPlaybackBehavior: AppKilledPlaybackBehavior.StopPlaybackAndRemoveNotification },
         });
-      } catch {
-        // setupPlayer throws if already initialized (dev hot reload) — safe to ignore
-      }
+      } catch { /* already initialized on hot reload */ }
     })();
   }, []);
 
-  // ─── Sync state refs so native event callbacks always have fresh values ───────
-  useEffect(() => {
-    queueCtxRef.current = { activeTrack, userId, userToken, currentMood, downloads };
-  });
+  // ─── Sync state refs ─────────────────────────────────────────────────────────
+  useEffect(() => { queueCtxRef.current = { activeTrack, userId, userToken, currentMood, downloads }; });
 
-  // ─── RNTP track-changed event — update active track when queue auto-advances ──
+  // ─── RNTP track-changed ───────────────────────────────────────────────────────
   useTrackPlayerEvents([Event.PlaybackTrackChanged], async (event: any) => {
     if (event.nextTrack !== undefined && event.nextTrack !== null) {
       try {
@@ -240,16 +286,10 @@ export default function App() {
         if (nextTrack) {
           const meta = trackMetaRef.current.get(String(nextTrack.id));
           if (meta) setActiveTrack(meta);
-          // Post to listening history
           const { userToken: tok } = queueCtxRef.current;
           if (tok && meta) {
-            fetch(`${BACKEND_URL}/api/user/history`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
-              body: JSON.stringify(meta),
-            }).catch(() => {});
+            fetch(`${BACKEND_URL}/api/user/history`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` }, body: JSON.stringify(meta) }).catch(() => {});
           }
-          // When only 1 song left in queue, pre-load 5 more
           const remaining = queue.length - event.nextTrack - 1;
           if (remaining <= 1) prefillQueue();
         }
@@ -257,45 +297,25 @@ export default function App() {
     }
   });
 
-  // ─── RNTP queue-ended event — fetch fresh song and keep playing ───────────────
-  useTrackPlayerEvents([Event.PlaybackQueueEnded], async () => {
-    prefillQueue();
-  });
+  // ─── RNTP queue-ended ─────────────────────────────────────────────────────────
+  useTrackPlayerEvents([Event.PlaybackQueueEnded], async () => { prefillQueue(); });
 
-  // ─── Keep BackHandler refs in sync with state ────────────────────────────────
-  useEffect(() => { screenRef.current     = currentScreen; }, [currentScreen]);
-  useEffect(() => { fullScreenRef.current = isFullScreen;  }, [isFullScreen]);
-
-  // ─── Android hardware back button ────────────────────────────────────────────
-  // Using refs (not state deps) prevents stale-closure issues where the old
-  // handler fires before React re-registers the new one.
+  // ─── BackHandler refs ─────────────────────────────────────────────────────────
+  useEffect(() => { screenRef.current = currentScreen; }, [currentScreen]);
+  useEffect(() => { fullScreenRef.current = isFullScreen; }, [isFullScreen]);
   useEffect(() => {
     const onBack = (): boolean => {
-      // 1. Close full-screen player → return to current section
-      if (fullScreenRef.current) {
-        setIsFullScreen(false);
-        return true;
-      }
-      // 2. Any sub-section (artist, library, downloads, playlist) → go to Home tab
-      if (screenRef.current !== 'all_songs') {
-        setCurrentScreen('all_songs');
-        return true;
-      }
-      // 3. Already on Home → let Android minimize the app
+      if (fullScreenRef.current) { setIsFullScreen(false); return true; }
+      if (screenRef.current !== 'all_songs') { setCurrentScreen('all_songs'); return true; }
       return false;
     };
     const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
     return () => sub.remove();
-  }, []); // empty deps — refs provide fresh values without re-registration
+  }, []);
 
   // ─── Search debounce ─────────────────────────────────────────────────────────
   useEffect(() => {
-    if (searchQuery.trim().length === 0) {
-      setSongsList([]);
-      setAlbumResults([]);
-      setExpandedAlbumId(null);
-      return;
-    }
+    if (searchQuery.trim().length === 0) { setSongsList([]); setAlbumResults([]); setExpandedAlbumId(null); return; }
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => fetchLiveTracks(searchQuery), 500);
     return () => clearTimeout(typingTimeoutRef.current);
@@ -312,16 +332,16 @@ export default function App() {
     return resp.json();
   };
 
-  // ─── Load user data from server ──────────────────────────────────────────────
+  // ─── Load user data ───────────────────────────────────────────────────────────
   const loadUserData = async (token: string) => {
     try {
-      const [favsRes, plRes, dlRes, settingsRes] = await Promise.all([
-        fetch(`${BACKEND_URL}/api/user/favorites`,  { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${BACKEND_URL}/api/user/playlists`,  { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${BACKEND_URL}/api/user/downloads`,  { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${BACKEND_URL}/api/user/profile`,    { headers: { Authorization: `Bearer ${token}` } }),
+      const [favsRes, plRes, dlRes, profileRes] = await Promise.all([
+        fetch(`${BACKEND_URL}/api/user/favorites`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${BACKEND_URL}/api/user/playlists`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${BACKEND_URL}/api/user/downloads`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${BACKEND_URL}/api/user/profile`,   { headers: { Authorization: `Bearer ${token}` } }),
       ]);
-      const [favs, pls, dls, profile] = await Promise.all([favsRes.json(), plRes.json(), dlRes.json(), settingsRes.json()]);
+      const [favs, pls, dls, profile] = await Promise.all([favsRes.json(), plRes.json(), dlRes.json(), profileRes.json()]);
       if (favs.success)    setFavorites(favs.data.favorites);
       if (pls.success)     setPlaylists(pls.data.playlists);
       if (dls.success)     setDownloads(dls.data.downloads);
@@ -333,26 +353,30 @@ export default function App() {
     } catch (e) { console.error('loadUserData error', e); }
   };
 
+  // ─── Load recently played ─────────────────────────────────────────────────────
+  const loadRecentlyPlayed = async (token?: string) => {
+    const t = token || userToken;
+    if (!t) return;
+    try {
+      const resp = await fetch(`${BACKEND_URL}/api/user/history`, { headers: { Authorization: `Bearer ${t}` } });
+      const json = await resp.json();
+      if (json.success) setRecentlyPlayed((json.data?.history || []).slice(0, 10));
+    } catch {}
+  };
+
   // ─── Auth ────────────────────────────────────────────────────────────────────
   const handleAuth = async () => {
-    if (!email || !password) { Alert.alert('Missing Fields', 'Enter email and password.'); return; }
+    if (!email || !password) { showAlert('Missing Fields', 'Enter email and password.'); return; }
     setIsLoading(true);
     try {
       const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
       const body: any = { email: email.trim().toLowerCase(), password };
       if (authMode === 'signup') body.username = username || email.split('@')[0];
-
-      const resp = await fetch(`${BACKEND_URL}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-
+      const resp = await fetch(`${BACKEND_URL}${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       let json: any;
       const rawText = await resp.text();
       try { json = JSON.parse(rawText); }
-      catch { Alert.alert('Server Error', `Status ${resp.status}: ${rawText.slice(0, 200)}`); setIsLoading(false); return; }
-
+      catch { showAlert('Server Error', `Status ${resp.status}: ${rawText.slice(0, 200)}`); setIsLoading(false); return; }
       if (json.success) {
         const { token, userId: uid, username: uname } = json;
         setUserToken(token); setUserId(uid); setUsername(uname);
@@ -361,22 +385,23 @@ export default function App() {
         await AsyncStorage.setItem('username', uname);
         setIsLoggedIn(true);
         await loadUserData(token);
+        loadRecentlyPlayed(token);
       } else {
-        Alert.alert('Error', json.error || 'Authentication failed');
+        showAlert('Error', json.error || 'Authentication failed');
       }
     } catch (e: any) {
-      Alert.alert('Network Error', e?.message || 'Could not connect to server.');
-    } finally {
-      setIsLoading(false);
-    }
+      showAlert('Network Error', e?.message || 'Could not connect to server.');
+    } finally { setIsLoading(false); }
   };
 
   const logout = async () => {
+    if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
     await TrackPlayer.reset();
     setActiveTrack(null); setIsLoggedIn(false);
     setAuthMode('login'); setEmail(''); setPassword(''); setUsername('');
     setUserToken(null); setUserId(null);
-    setFavorites([]); setPlaylists([]); setDownloads([]);
+    setFavorites([]); setPlaylists([]); setDownloads([]); setRecentlyPlayed([]);
+    setSleepTimer(0); setSleepTimerEnd(0);
     trackMetaRef.current.clear();
     await AsyncStorage.multiRemove(['token', 'userId', 'username']);
   };
@@ -398,18 +423,14 @@ export default function App() {
   // ─── Playlists ───────────────────────────────────────────────────────────────
   const createNewPlaylist = async () => {
     const name = newPlaylistName.trim();
-    if (!name) { Alert.alert('Name required', 'Please enter a playlist name.'); return; }
-    // Duplicate name check
-    if (playlists.some(p => p.name.toLowerCase() === name.toLowerCase())) {
-      Alert.alert('Duplicate Name', 'A playlist with this name already exists.'); return;
-    }
+    if (!name) { showAlert('Name Required', 'Please enter a playlist name.'); return; }
+    if (playlists.some(p => p.name.toLowerCase() === name.toLowerCase())) { showAlert('Duplicate Name', 'A playlist with this name already exists.'); return; }
     try {
       const json = await apiCall('/api/user/playlists', 'POST', { name, song: playlistSongTarget });
       if (json.success) {
-        setPlaylists(json.data.playlists);
-        setNewPlaylistName('');
-        if (playlistSongTarget) { setPlaylistModalVisible(false); setPlaylistSongTarget(null); Alert.alert('Created ✅', 'Playlist created & song added!'); }
-        else { Alert.alert('Created ✅', `"${name}" playlist created!`); }
+        setPlaylists(json.data.playlists); setNewPlaylistName('');
+        if (playlistSongTarget) { setPlaylistModalVisible(false); setPlaylistSongTarget(null); showAlert('Created', 'Playlist created and song added!'); }
+        else { showAlert('Created', `"${name}" playlist created!`); }
       }
     } catch (e) { console.error('createPlaylist error', e); }
   };
@@ -418,17 +439,16 @@ export default function App() {
     if (!playlistSongTarget) return;
     try {
       const json = await apiCall(`/api/user/playlists/${playlistId}/songs`, 'POST', playlistSongTarget);
-      if (json.success) { setPlaylists(json.data.playlists); setPlaylistModalVisible(false); setPlaylistSongTarget(null); Alert.alert('Added', 'Song added to playlist.'); }
+      if (json.success) { setPlaylists(json.data.playlists); setPlaylistModalVisible(false); setPlaylistSongTarget(null); showAlert('Added', 'Song added to playlist.'); }
     } catch (e) { console.error('addToPlaylist error', e); }
   };
 
   // ─── Downloads ───────────────────────────────────────────────────────────────
   const downloadSong = async (song: any) => {
-    if (downloads.some(d => d.id === song.id)) { Alert.alert('Already Downloaded', 'This song is already saved.'); return; }
+    if (downloads.some(d => d.id === song.id)) { showAlert('Already Downloaded', 'This song is already saved offline.'); return; }
     try {
-      Alert.alert('Downloading...', 'Please wait. This may take a moment.');
+      showAlert('Downloading', 'Please wait, downloading song...');
       const fileUri = FileSystem.documentDirectory + `zyra_${song.id}.mp3`;
-      // Pass title+artist so backend can use yt-dlp fallback correctly
       const titleEnc  = encodeURIComponent(song.title  || '');
       const artistEnc = encodeURIComponent(song.artist || '');
       const urlToDownload = `${BACKEND_URL}/api/stream?id=${song.id}&title=${titleEnc}&artist=${artistEnc}`;
@@ -436,44 +456,23 @@ export default function App() {
       if (!downloadRes.uri) throw new Error('Download failed');
       const entry = { ...song, localUri: downloadRes.uri };
       const json  = await apiCall('/api/user/downloads', 'POST', entry);
-      if (json.success) { setDownloads(json.data.downloads); Alert.alert('\u2705 Downloaded', 'Available offline!'); }
-    } catch (e) { console.error('Download error', e); Alert.alert('Error', 'Download failed. Try again.'); }
+      if (json.success) { setDownloads(json.data.downloads); showAlert('Downloaded', 'Song saved for offline listening!'); }
+    } catch (e) { console.error('Download error', e); showAlert('Error', 'Download failed. Please try again.'); }
   };
 
   const deleteDownload = async (song: any) => {
-    Alert.alert(
-      'Remove Download',
-      `Remove "${song.title}" from downloads?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove', style: 'destructive',
-          onPress: async () => {
-            try {
-              // Delete local file if it exists
-              if (song.localUri) {
-                try { await FileSystem.deleteAsync(song.localUri, { idempotent: true }); } catch {}
-              }
-              // Remove from backend
-              const json = await apiCall(`/api/user/downloads/${song.id}`, 'DELETE');
-              if (json.success) {
-                setDownloads(json.data.downloads);
-                // If currently playing this downloaded song, keep playing (stream will now use online)
-              } else {
-                // Optimistic local remove if backend fails
-                setDownloads(prev => prev.filter(d => d.id !== song.id));
-              }
-            } catch (e) {
-              console.error('Delete download error', e);
-              // Optimistic remove anyway
-              setDownloads(prev => prev.filter(d => d.id !== song.id));
-            }
-          }
-        }
-      ]
-    );
+    showAlert('Remove Download', `Remove "${song.title}" from downloads?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: async () => {
+        try {
+          if (song.localUri) { try { await FileSystem.deleteAsync(song.localUri, { idempotent: true }); } catch {} }
+          const json = await apiCall(`/api/user/downloads/${song.id}`, 'DELETE');
+          if (json.success) setDownloads(json.data.downloads);
+          else setDownloads(prev => prev.filter(d => d.id !== song.id));
+        } catch (e) { console.error('Delete download error', e); setDownloads(prev => prev.filter(d => d.id !== song.id)); }
+      }},
+    ]);
   };
-
 
   // ─── Search ──────────────────────────────────────────────────────────────────
   const fetchLiveTracks = async (query: string) => {
@@ -481,13 +480,8 @@ export default function App() {
       setIsSearching(true);
       const resp = await fetch(`${BACKEND_URL}/api/search?query=${encodeURIComponent(query)}`);
       const json = await resp.json();
-      if (json.success) {
-        setSongsList(json.data.results || []);
-        setAlbumResults(json.data.albums   || []);
-      } else {
-        setSongsList([]);
-        setAlbumResults([]);
-      }
+      if (json.success) { setSongsList(json.data.results || []); setAlbumResults(json.data.albums || []); }
+      else { setSongsList([]); setAlbumResults([]); }
     } catch (e) { setSongsList([]); setAlbumResults([]); }
     finally { setIsSearching(false); }
   };
@@ -510,54 +504,45 @@ export default function App() {
     });
   };
 
-  // ─── Fetch autoplay queue ────────────────────────────────────────────────────
+  // ─── Fetch autoplay queue ─────────────────────────────────────────────────────
   const fetchQueue = async (songId: string, mood: string) => {
     try {
       const resp = await fetch(`${BACKEND_URL}/api/recommendations/queue?songId=${songId}&userId=${userId||''}&mood=${mood}`);
       const json = await resp.json();
       if (json.success) setAutoplayQueue(json.queue || []);
-    } catch (e) { /* silent */ }
+    } catch {}
   };
 
-  // ─── Stream URL helper ───────────────────────────────────────────────────────
+  // ─── Stream URL helper ────────────────────────────────────────────────────────
   const getStreamUrl = useCallback((song: any): string => {
     const dl = downloads.find((d: any) => d.id === song.id);
     if (dl?.localUri) return dl.localUri;
-    // Use direct CDN URL if pre-included in search/autoplay results (eliminates 15s delay)
-    if (song.url && typeof song.url === 'string' && song.url.startsWith('http')) {
-      return song.url;
-    }
-    // Fallback: backend stream proxy (resolves URL on-demand)
+    // Use direct CDN URL if present in search results (eliminates stream-resolve delay)
+    if (song.url && typeof song.url === 'string' && song.url.startsWith('http')) return song.url;
+    // Backend proxy — also now redirects to CDN for JioSaavn
     const te = encodeURIComponent(song.title  || '');
     const ae = encodeURIComponent(song.artist || '');
     return `${BACKEND_URL}/api/stream?id=${song.id}&title=${te}&artist=${ae}`;
   }, [downloads]);
 
-  // ─── Add up to `limit` songs to RNTP queue ──────────────────────────────────
+  // ─── Add songs to RNTP queue ──────────────────────────────────────────────────
   const addSongsToQueue = useCallback(async (songs: any[], limitN = 5) => {
     let added = 0;
     for (const song of songs) {
       if (added >= limitN) break;
       if (!song?.id) continue;
-      const existingMeta = trackMetaRef.current.get(String(song.id));
-      if (existingMeta) continue; // already in queue
+      if (trackMetaRef.current.get(String(song.id))) continue;
       trackMetaRef.current.set(String(song.id), song);
       try {
-        await TrackPlayer.add({
-          id:      String(song.id),
-          url:     getStreamUrl(song),
-          title:   song.title  || '',
-          artist:  song.artist || '',
-          artwork: song.image  || '',
-        });
+        await TrackPlayer.add({ id: String(song.id), url: getStreamUrl(song), title: song.title || '', artist: song.artist || '', artwork: song.image || '' });
         added++;
-      } catch { /* skip tracks that fail to add */ }
+      } catch {}
     }
   }, [getStreamUrl]);
 
-  // ─── Pre-fill queue when running low ─────────────────────────────────────────
+  // ─── Pre-fill queue ───────────────────────────────────────────────────────────
   const prefillQueue = useCallback(async () => {
-    const { activeTrack: at, userId: uid, currentMood: mood, userToken: tok } = queueCtxRef.current;
+    const { activeTrack: at, userId: uid, currentMood: mood } = queueCtxRef.current;
     if (!at) return;
     try {
       const qs  = `songId=${at.id}&userId=${uid||''}&mood=${mood}`;
@@ -566,18 +551,15 @@ export default function App() {
       if (json.success && json.song) {
         await addSongsToQueue([json.song], 1);
         const q = await TrackPlayer.getQueue();
-        if (q.length === 1) await TrackPlayer.play(); // resume if queue was empty
+        if (q.length === 1) await TrackPlayer.play();
       }
     } catch {}
   }, [addSongsToQueue]);
 
-  // ─── Fetch artist top tracks ─────────────────────────────────────────────────
+  // ─── Fetch artist tracks ──────────────────────────────────────────────────────
   const fetchArtist = async (artist: any) => {
-    setActiveArtist(artist);
-    setArtistTracks([]);
-    setArtistLoading(true);
-    setIsArtistMode(true);
-    artistPlayedRef.current = new Set(); // reset played set for new artist
+    setActiveArtist(artist); setArtistTracks([]); setArtistLoading(true);
+    setIsArtistMode(true); artistPlayedRef.current = new Set();
     setCurrentScreen('artist_profile');
     try {
       const resp = await fetch(`${BACKEND_URL}/api/artist?name=${encodeURIComponent(artist.name)}`);
@@ -587,71 +569,48 @@ export default function App() {
     finally { setArtistLoading(false); }
   };
 
-  // ─── Load top artists on mount ───────────────────────────────────────────────
-  useEffect(() => {
-    fetch(`${BACKEND_URL}/api/artists/top`)
-      .then(r => r.json())
-      .then(j => { if (j.success) setTopArtists(j.artists || []); })
-      .catch(() => {});
-  }, []);
-
-  // ─── Play track ──────────────────────────────────────────────────────────────
+  // ─── Play track ───────────────────────────────────────────────────────────────
   async function handleTrackPress(track: any) {
     try {
       setIsLoading(true);
       setIsYoutubeFallback(track.id?.startsWith('yt_') || false);
       setActiveTrack(track);
+      setShowLyrics(false); setLyrics('');
       if (searchQuery.trim()) saveSearchHistory(searchQuery.trim());
 
-      // Reset queue and add tapped track first
       await TrackPlayer.reset();
       trackMetaRef.current.clear();
       trackMetaRef.current.set(String(track.id), track);
-      await TrackPlayer.add({
-        id:      String(track.id),
-        url:     getStreamUrl(track),
-        title:   track.title  || '',
-        artist:  track.artist || '',
-        artwork: track.image  || '',
-      });
+      await TrackPlayer.add({ id: String(track.id), url: getStreamUrl(track), title: track.title || '', artist: track.artist || '', artwork: track.image || '' });
       await TrackPlayer.play();
       setIsLoading(false);
 
-      // ── In background: add next songs from current list ──
+      // Queue next songs in background
       const list = getActiveList();
       if (list.length > 0) {
         const idx = list.findIndex((s: any) => s.id === track.id);
         const nextSongs = idx >= 0 ? list.slice(idx + 1, idx + 6) : [];
-        if (nextSongs.length > 0) {
-          addSongsToQueue(nextSongs, 5);
-        }
+        if (nextSongs.length > 0) addSongsToQueue(nextSongs, 5);
       }
 
-      // ── Post to history + detect mood → use to refresh genre queue ──
+      // Post history + detect mood
       if (userToken) {
-        apiCall('/api/user/history', 'POST', {
-          id: track.id, title: track.title,
-          artist: track.artist, image: track.image,
-        }).then(json => {
-          if (json.success) {
-            const mood = json.mood || 'default';
-            setCurrentMood(mood);
-            setAutoplayReason('');
-            // Eagerly pre-fill queue with same-genre songs in background
-            fetchQueue(track.id, mood).then(() => {
-              // autoplayQueue state will update via setAutoplayQueue;
-              // addSongsToQueue is called when queue runs low (PlaybackTrackChanged event)
-            });
-          }
-        }).catch(() => {});
+        apiCall('/api/user/history', 'POST', { id: track.id, title: track.title, artist: track.artist, image: track.image })
+          .then(json => {
+            if (json.success) {
+              const mood = json.mood || 'default';
+              setCurrentMood(mood); setAutoplayReason('');
+              fetchQueue(track.id, mood);
+            }
+          }).catch(() => {});
+        loadRecentlyPlayed();
       }
     } catch (e: any) {
       console.error('Playback error:', e);
-      Alert.alert('Song Unavailable', 'Could not play this song. Please try another.');
+      showAlert('Song Unavailable', 'Could not play this song. Please try another.');
       setIsLoading(false);
     }
   }
-
 
   // ─── Controls ────────────────────────────────────────────────────────────────
   const togglePlayPause = async () => {
@@ -671,11 +630,81 @@ export default function App() {
   const handleProgressBarTap = async (event: any) => {
     if (!activeTrack || duration === 0) return;
     const pct    = event.nativeEvent.locationX / progressBarWidthRef.current;
-    const target = pct * durRaw; // durRaw is in seconds — seekTo() takes seconds
-    await TrackPlayer.seekTo(target);
+    await TrackPlayer.seekTo(pct * durRaw);
   };
 
-  // ─── Active list helper ──────────────────────────────────────────────────────
+  // ─── Repeat ──────────────────────────────────────────────────────────────────
+  const toggleRepeat = async () => {
+    const modes: ('off'|'all'|'one')[] = ['off', 'all', 'one'];
+    const next = modes[(modes.indexOf(repeatMode) + 1) % 3];
+    setRepeatMode(next);
+    if (next === 'off') await TrackPlayer.setRepeatMode(RepeatMode.Off);
+    else if (next === 'all') await TrackPlayer.setRepeatMode(RepeatMode.Queue);
+    else await TrackPlayer.setRepeatMode(RepeatMode.Track);
+  };
+
+  // ─── Shuffle ─────────────────────────────────────────────────────────────────
+  const toggleShuffle = async () => {
+    const next = !isShuffled;
+    setIsShuffled(next);
+    if (next && activeTrack) {
+      const list = getActiveList();
+      if (list.length > 1) {
+        const shuffled = [...list].sort(() => Math.random() - 0.5);
+        addSongsToQueue(shuffled.slice(0, 6), 6);
+      }
+    }
+  };
+
+  // ─── Sleep Timer ─────────────────────────────────────────────────────────────
+  const setSleepTimerDuration = async (minutes: number) => {
+    if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
+    setSleepTimer(minutes);
+    if (minutes > 0) {
+      const endTime = Date.now() + minutes * 60 * 1000;
+      setSleepTimerEnd(endTime);
+      sleepTimerRef.current = setTimeout(async () => {
+        await TrackPlayer.pause();
+        setSleepTimer(0); setSleepTimerEnd(0);
+        showAlert('Sleep Timer', 'Playback paused. Goodnight!');
+      }, minutes * 60 * 1000);
+    } else {
+      setSleepTimerEnd(0);
+    }
+  };
+
+  // ─── Lyrics ──────────────────────────────────────────────────────────────────
+  const fetchLyrics = async (song: any) => {
+    if (!song) return;
+    setLyricsLoading(true); setLyrics('');
+    try {
+      const resp = await fetch(`${BACKEND_URL}/api/lyrics?title=${encodeURIComponent(song.title)}&artist=${encodeURIComponent(song.artist)}`);
+      const json = await resp.json();
+      if (json.success && json.lyrics) setLyrics(json.lyrics);
+      else setLyrics('Lyrics not available for this song.');
+    } catch { setLyrics('Could not load lyrics.'); }
+    finally { setLyricsLoading(false); }
+  };
+
+  // ─── Share ───────────────────────────────────────────────────────────────────
+  const shareSong = async (song: any) => {
+    try {
+      await Share.share({ title: song.title, message: `🎵 Listening to "${song.title}" by ${song.artist} on Zyra Music!` });
+    } catch {}
+  };
+
+  // ─── Add single song to queue (long-press) ────────────────────────────────────
+  const addSingleToQueue = async (song: any) => {
+    if (!song?.id) return;
+    if (trackMetaRef.current.get(String(song.id))) { showAlert('Already in Queue', 'This song is already in the up next queue.'); return; }
+    trackMetaRef.current.set(String(song.id), song);
+    try {
+      await TrackPlayer.add({ id: String(song.id), url: getStreamUrl(song), title: song.title || '', artist: song.artist || '', artwork: song.image || '' });
+      showAlert('Added to Queue', `"${song.title}" added to up next.`);
+    } catch { showAlert('Error', 'Could not add to queue.'); }
+  };
+
+  // ─── Active list helper ───────────────────────────────────────────────────────
   const getActiveList = () => {
     if (currentScreen === 'library') return favorites;
     if (currentScreen === 'downloads') return downloads;
@@ -686,32 +715,23 @@ export default function App() {
     return songsList;
   };
 
-  // ─── Smart autoplay ──────────────────────────────────────────────────────────
+  // ─── playNext / playPrevious ──────────────────────────────────────────────────
   const playNext = async () => {
     if (!activeTrack) return;
-    try {
-      await TrackPlayer.skipToNext();
-    } catch {
-      // Queue exhausted — fetch a fresh song from autoplay
-      await handleAutoNext();
-    }
+    if (repeatMode === 'one') { await TrackPlayer.seekTo(0); await TrackPlayer.play(); return; }
+    try { await TrackPlayer.skipToNext(); }
+    catch { await handleAutoNext(); }
   };
 
   const playPrevious = async () => {
     if (!activeTrack) return;
-    // If >3s played, restart current song; otherwise go to previous
-    if (posRaw > 3) {
-      await TrackPlayer.seekTo(0);
-    } else {
-      try { await TrackPlayer.skipToPrevious(); }
-      catch { await TrackPlayer.seekTo(0); }
-    }
+    if (posRaw > 3) await TrackPlayer.seekTo(0);
+    else { try { await TrackPlayer.skipToPrevious(); } catch { await TrackPlayer.seekTo(0); } }
   };
 
-  // Assign playNextRef in render body — always fresh for shake + RNTP handlers
   playNextRef.current = playNext;
 
-  // ─── Genre-smart auto-next (called when queue runs empty) ────────────────────
+  // ─── Genre-smart auto-next ────────────────────────────────────────────────────
   const handleAutoNext = async () => {
     if (!activeTrack) return;
     if (smartAutoplay) {
@@ -720,25 +740,41 @@ export default function App() {
         const qs  = `songId=${activeTrack.id}&userId=${userId||''}&mood=${currentMood}`;
         const res = await fetch(`${BACKEND_URL}/api/autoplay?${qs}`);
         const json = await res.json();
-        if (json.success) {
-          setAutoplayReason(json.reason);
-          setCurrentMood(json.mood || 'default');
-          await handleTrackPress(json.song);
-          return;
-        }
+        if (json.success) { setAutoplayReason(json.reason); setCurrentMood(json.mood || 'default'); await handleTrackPress(json.song); return; }
       } catch (e) { console.error('Auto-next failed', e); }
       finally { setIsLoading(false); }
     }
-    // Fallback: random
     try {
       const res  = await fetch(`${BACKEND_URL}/api/random`);
       const json = await res.json();
-      if (json.success && json.data?.song) { await handleTrackPress(json.data.song); }
-    } catch { /* silent */ }
+      if (json.success && json.data?.song) await handleTrackPress(json.data.song);
+    } catch {}
   };
-  // handleAutoNextRef assigned AFTER definition so the closure is valid
   handleAutoNextRef.current = handleAutoNext;
 
+  // ─── Shake-specific: smart autoplay API directly (FIXED) ─────────────────────
+  const handleShakeNext = async () => {
+    const { activeTrack: at, userId: uid, currentMood: mood } = queueCtxRef.current;
+    if (!at) return;
+    try {
+      setIsLoading(true);
+      const qs  = `songId=${at.id}&userId=${uid||''}&mood=${mood}`;
+      const res = await fetch(`${BACKEND_URL}/api/autoplay?${qs}`);
+      const json = await res.json();
+      if (json.success && json.song) {
+        setAutoplayReason(json.reason || '✨ Shaken to same genre');
+        setCurrentMood(json.mood || 'default');
+        await handleTrackPress(json.song);
+        return;
+      }
+      // Fallback: random
+      const r2   = await fetch(`${BACKEND_URL}/api/random`);
+      const j2   = await r2.json();
+      if (j2.success && j2.data?.song) await handleTrackPress(j2.data.song);
+    } catch (e) { console.error('Shake next failed', e); }
+    finally { setIsLoading(false); }
+  };
+  handleShakeNextRef.current = handleShakeNext;
 
   // ─── Theme ───────────────────────────────────────────────────────────────────
   const theme = {
@@ -754,16 +790,16 @@ export default function App() {
     miniPlayerBg: isDarkMode ? '#0a1622' : '#dde8f5',
   };
 
-  // ─── Track card render ───────────────────────────────────────────────────────
+  // ─── Track card ───────────────────────────────────────────────────────────────
   const renderTrackCard = (song: any, isCurrent: boolean, isFav: boolean) => (
-    <TouchableOpacity key={song.id} style={[styles.trackCard, { backgroundColor: theme.card, borderColor: isCurrent ? moodColor + '44' : 'transparent' }]} onPress={() => handleTrackPress(song)}>
-      {/* Circular album art — overflow:hidden on View clips the Image to a circle on Android */}
+    <TouchableOpacity
+      key={song.id}
+      style={[styles.trackCard, { backgroundColor: theme.card, borderColor: isCurrent ? moodColor + '44' : 'transparent' }]}
+      onPress={() => handleTrackPress(song)}
+      onLongPress={() => { setContextMenuSong(song); setContextMenuVisible(true); }}
+    >
       <View style={{ width: 48, height: 48, borderRadius: 24, overflow: 'hidden', backgroundColor: theme.surface, justifyContent: 'center', alignItems: 'center', marginRight: 15 }}>
-        {song.image ? (
-          <Image source={{ uri: song.image }} style={{ width: 48, height: 48 }} />
-        ) : (
-          <Ionicons name={isCurrent && isPlaying ? 'pause' : 'disc-outline'} size={24} color={isCurrent ? moodColor : '#8e8e93'} />
-        )}
+        {song.image ? <Image source={{ uri: song.image }} style={{ width: 48, height: 48 }} /> : <Ionicons name={isCurrent && isPlaying ? 'pause' : 'disc-outline'} size={24} color={isCurrent ? moodColor : '#8e8e93'} />}
       </View>
       <View style={styles.trackInfo}>
         <Text numberOfLines={1} style={[styles.trackTitle, { color: isCurrent ? moodColor : theme.text }]}>{song.title}</Text>
@@ -781,74 +817,59 @@ export default function App() {
     </TouchableOpacity>
   );
 
-  // ─── Loading screen ──────────────────────────────────────────────────────────
+  // ─── Loading ──────────────────────────────────────────────────────────────────
   if (!isAppReady) return (
     <View style={styles.container}>
       <ActivityIndicator color="#00ffcc" size="large" style={{ marginTop: '50%' }} />
     </View>
   );
 
-  // ─── Auth screen ─────────────────────────────────────────────────────────────
+  // ─── Auth screen ──────────────────────────────────────────────────────────────
   if (!isLoggedIn) {
-    // ── Forgot password: send OTP ──
     const handleForgotPassword = async () => {
-      if (!resetEmail) { Alert.alert('Error', 'Please enter your email.'); return; }
+      if (!resetEmail) { showAlert('Error', 'Please enter your email.'); return; }
       setIsLoading(true);
       try {
-        const resp = await fetch(`${BACKEND_URL}/api/auth/forgot-password`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: resetEmail.trim().toLowerCase() }),
-        });
+        const resp = await fetch(`${BACKEND_URL}/api/auth/forgot-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: resetEmail.trim().toLowerCase() }) });
         const json = await resp.json();
-        if (json.success) { Alert.alert('OTP Sent ✉️', json.message); setAuthMode('verify_otp'); }
-        else Alert.alert('Error', json.error || 'Failed to send OTP');
-      } catch { Alert.alert('Error', 'Network error. Try again.'); }
+        if (json.success) { showAlert('OTP Sent', json.message); setAuthMode('verify_otp'); }
+        else showAlert('Error', json.error || 'Failed to send OTP');
+      } catch { showAlert('Error', 'Network error. Please check your connection.'); }
       finally { setIsLoading(false); }
     };
-
-    // ── Verify OTP ──
     const handleVerifyOtp = async () => {
-      if (!otpValue || otpValue.length !== 6) { Alert.alert('Error', 'Please enter the 6-digit OTP.'); return; }
+      if (!otpValue || otpValue.length !== 6) { showAlert('Error', 'Please enter the 6-digit OTP.'); return; }
       setIsLoading(true);
       try {
-        const resp = await fetch(`${BACKEND_URL}/api/auth/verify-otp`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: resetEmail, otp: otpValue }),
-        });
+        const resp = await fetch(`${BACKEND_URL}/api/auth/verify-otp`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: resetEmail, otp: otpValue }) });
         const json = await resp.json();
-        if (json.success) { Alert.alert('Verified ✅', json.message); setAuthMode('reset_password'); }
-        else Alert.alert('Error', json.error || 'OTP verification failed');
-      } catch { Alert.alert('Error', 'Network error. Try again.'); }
+        if (json.success) { showAlert('Verified', json.message); setAuthMode('reset_password'); }
+        else showAlert('Error', json.error || 'OTP verification failed');
+      } catch { showAlert('Error', 'Network error. Please check your connection.'); }
       finally { setIsLoading(false); }
     };
-
-    // ── Reset password ──
     const handleResetPassword = async () => {
-      if (!newPassword || newPassword.length < 6) { Alert.alert('Error', 'Password must be at least 6 characters.'); return; }
-      if (newPassword !== confirmPassword) { Alert.alert('Error', 'Passwords do not match.'); return; }
+      if (!newPassword || newPassword.length < 6) { showAlert('Error', 'Password must be at least 6 characters.'); return; }
+      if (newPassword !== confirmPassword) { showAlert('Error', 'Passwords do not match.'); return; }
       setIsLoading(true);
       try {
-        const resp = await fetch(`${BACKEND_URL}/api/auth/reset-password`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: resetEmail, otp: otpValue, password: newPassword }),
-        });
+        const resp = await fetch(`${BACKEND_URL}/api/auth/reset-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: resetEmail, otp: otpValue, password: newPassword }) });
         const json = await resp.json();
         if (json.success) {
-          Alert.alert('Success 🎉', json.message);
-          setAuthMode('login'); setOtpValue(''); setResetEmail(''); setNewPassword(''); setConfirmPassword('');
-        } else Alert.alert('Error', json.error || 'Password reset failed');
-      } catch { Alert.alert('Error', 'Network error. Try again.'); }
+          showAlert('Success', json.message, [{ text: 'Login Now', onPress: () => { setAuthMode('login'); setOtpValue(''); setResetEmail(''); setNewPassword(''); setConfirmPassword(''); } }]);
+        } else showAlert('Error', json.error || 'Password reset failed');
+      } catch { showAlert('Error', 'Network error. Please check your connection.'); }
       finally { setIsLoading(false); }
     };
 
     return (
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.authContainer}>
         <StatusBar barStyle="light-content" />
+        <ZyraAlert visible={alertVisible} title={alertTitle} message={alertMessage} buttons={alertButtons} onDismiss={() => setAlertVisible(false)} />
         <View style={styles.authBox}>
           <Ionicons name="pulse" size={64} color="#00ffcc" style={{ marginBottom: 20 }} />
           <Text style={styles.authTitle}>ZYRA</Text>
 
-          {/* ── LOGIN ── */}
           {authMode === 'login' && (<>
             <Text style={styles.authSubtitle}>Sign in to continue</Text>
             <TextInput style={styles.authInput} placeholder="Email" placeholderTextColor="#666" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
@@ -864,7 +885,6 @@ export default function App() {
             </TouchableOpacity>
           </>)}
 
-          {/* ── SIGNUP ── */}
           {authMode === 'signup' && (<>
             <Text style={styles.authSubtitle}>Create your account</Text>
             <TextInput style={styles.authInput} placeholder="Username" placeholderTextColor="#666" value={username} onChangeText={setUsername} autoCapitalize="none" />
@@ -878,19 +898,18 @@ export default function App() {
             </TouchableOpacity>
           </>)}
 
-          {/* ── FORGOT PASSWORD: enter email ── */}
           {authMode === 'forgot' && (<>
             <Text style={styles.authSubtitle}>Enter your registered email</Text>
             <TextInput style={styles.authInput} placeholder="Email" placeholderTextColor="#666" value={resetEmail} onChangeText={setResetEmail} autoCapitalize="none" keyboardType="email-address" />
             <TouchableOpacity style={styles.authBtn} onPress={handleForgotPassword} disabled={isLoading}>
               {isLoading ? <ActivityIndicator color="#050515" /> : <Text style={styles.authBtnText}>SEND OTP</Text>}
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setAuthMode('login')} style={{ marginTop: 20 }}>
-              <Text style={styles.authSwitchText}>← Back to Login</Text>
+            <TouchableOpacity onPress={() => setAuthMode('login')} style={styles.backToLoginBtn}>
+              <Ionicons name="arrow-back" size={16} color="#00ffcc" />
+              <Text style={styles.backToLoginText}>Back to Login</Text>
             </TouchableOpacity>
           </>)}
 
-          {/* ── VERIFY OTP ── */}
           {authMode === 'verify_otp' && (<>
             <Text style={styles.authSubtitle}>Enter the 6-digit OTP sent to</Text>
             <Text style={{ color: '#00ffcc', fontSize: 13, marginBottom: 16 }}>{resetEmail}</Text>
@@ -901,12 +920,12 @@ export default function App() {
             <TouchableOpacity onPress={handleForgotPassword} style={{ marginTop: 14 }}>
               <Text style={{ color: '#8e8e93', fontSize: 14 }}>Resend OTP</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setAuthMode('login')} style={{ marginTop: 14 }}>
-              <Text style={styles.authSwitchText}>← Back to Login</Text>
+            <TouchableOpacity onPress={() => setAuthMode('login')} style={styles.backToLoginBtn}>
+              <Ionicons name="arrow-back" size={16} color="#00ffcc" />
+              <Text style={styles.backToLoginText}>Back to Login</Text>
             </TouchableOpacity>
           </>)}
 
-          {/* ── RESET PASSWORD ── */}
           {authMode === 'reset_password' && (<>
             <Text style={styles.authSubtitle}>Create a new password</Text>
             <TextInput style={styles.authInput} placeholder="New Password" placeholderTextColor="#666" secureTextEntry value={newPassword} onChangeText={setNewPassword} />
@@ -914,8 +933,9 @@ export default function App() {
             <TouchableOpacity style={styles.authBtn} onPress={handleResetPassword} disabled={isLoading}>
               {isLoading ? <ActivityIndicator color="#050515" /> : <Text style={styles.authBtnText}>RESET PASSWORD</Text>}
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setAuthMode('login')} style={{ marginTop: 20 }}>
-              <Text style={styles.authSwitchText}>← Back to Login</Text>
+            <TouchableOpacity onPress={() => setAuthMode('login')} style={styles.backToLoginBtn}>
+              <Ionicons name="arrow-back" size={16} color="#00ffcc" />
+              <Text style={styles.backToLoginText}>Back to Login</Text>
             </TouchableOpacity>
           </>)}
         </View>
@@ -923,52 +943,45 @@ export default function App() {
     );
   }
 
-  // ─── Main App ────────────────────────────────────────────────────────────────
+  // ─── Main App ─────────────────────────────────────────────────────────────────
   const moodColor = MOOD_COLORS[currentMood] || '#00ffcc';
+  const sleepRemaining = sleepTimer > 0 && sleepTimerEnd > 0 ? Math.max(0, Math.floor((sleepTimerEnd - Date.now()) / 1000)) : 0;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} backgroundColor={theme.header} />
 
-      {/* HEADER — pill/capsule design */}
+      {/* CUSTOM ALERT */}
+      <ZyraAlert visible={alertVisible} title={alertTitle} message={alertMessage} buttons={alertButtons} onDismiss={() => setAlertVisible(false)} />
+
+      {/* HEADER */}
       <View style={[styles.header, { backgroundColor: theme.header }]}>
         <View style={[styles.headerPill, { backgroundColor: moodColor + '18', borderColor: moodColor + '44' }]}>
           <Text style={[styles.headerTitle, { color: isDarkMode ? '#fff' : theme.text }]}>
-            {currentScreen === 'all_songs' ? 'HOME'
-              : currentScreen === 'library'       ? 'LIBRARY'
-              : currentScreen === 'downloads'     ? 'DOWNLOADS'
-              : currentScreen === 'playlist_view' ? 'PLAYLIST'
-              : currentScreen === 'artist_profile'? (activeArtist?.name || 'ARTIST').toUpperCase()
-              : 'SETTINGS'}
+            {currentScreen === 'all_songs' ? 'HOME' : currentScreen === 'library' ? 'LIBRARY' : currentScreen === 'downloads' ? 'DOWNLOADS' : currentScreen === 'playlist_view' ? 'PLAYLIST' : currentScreen === 'artist_profile' ? (activeArtist?.name || 'ARTIST').toUpperCase() : 'SETTINGS'}
           </Text>
         </View>
-        {autoplayReason.length > 0 && currentScreen === 'all_songs' && (
+        {sleepTimer > 0 && (
+          <Text style={{ color: '#ff9944', fontSize: 11, marginTop: 4, fontWeight: '600' }}>
+            😴 Sleep in {Math.floor(sleepRemaining / 60)}:{String(sleepRemaining % 60).padStart(2, '0')}
+          </Text>
+        )}
+        {autoplayReason.length > 0 && currentScreen === 'all_songs' && sleepTimer === 0 && (
           <Text style={[styles.autoplayBanner, { color: moodColor }]}>{autoplayReason}</Text>
         )}
       </View>
 
       <View style={styles.content}>
 
+        {/* HOME */}
         {currentScreen === 'all_songs' && (
           <View style={styles.screenBody}>
-            {/* Search bar */}
             <View style={styles.searchBox}>
               <Ionicons name="search" size={20} color="#666" style={{ marginRight: 10 }} />
-              <TextInput
-                placeholder="Search songs, artists..."
-                placeholderTextColor="#666"
-                style={styles.input}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                onFocus={() => setIsSearchFocused(true)}
-                onBlur={() => setTimeout(() => setIsSearchFocused(false), 150)}
-              />
-              {isSearching ? <ActivityIndicator size="small" color="#00ffcc" /> : searchQuery.length > 0 ? (
-                <TouchableOpacity onPress={() => setSearchQuery('')}><Ionicons name="close-circle" size={18} color="#8e8e93" /></TouchableOpacity>
-              ) : null}
+              <TextInput placeholder="Search songs, artists..." placeholderTextColor="#666" style={styles.input} value={searchQuery} onChangeText={setSearchQuery} onFocus={() => setIsSearchFocused(true)} onBlur={() => setTimeout(() => setIsSearchFocused(false), 150)} />
+              {isSearching ? <ActivityIndicator size="small" color="#00ffcc" /> : searchQuery.length > 0 ? (<TouchableOpacity onPress={() => setSearchQuery('')}><Ionicons name="close-circle" size={18} color="#8e8e93" /></TouchableOpacity>) : null}
             </View>
 
-            {/* Search history dropdown */}
             {isSearchFocused && searchQuery.trim().length === 0 && searchHistory.length > 0 && (
               <View style={styles.historyDropdown}>
                 <Text style={styles.historyHeader}>Recent Searches</Text>
@@ -986,34 +999,22 @@ export default function App() {
               </View>
             )}
 
-            {/* When searching — show results */}
             {searchQuery.trim().length > 0 ? (
               <>
-                {/* Album / Movie groups */}
                 {albumResults.length > 0 && (
                   <>
                     <Text style={[styles.sectionHeader, { color: '#00ffcc' }]}>🎬 Albums / Movies</Text>
                     {albumResults.map(album => (
                       <View key={album.id} style={{ marginBottom: 8 }}>
-                        <TouchableOpacity
-                          style={[styles.trackCard, { backgroundColor: theme.card, borderColor: '#00ffcc33' }]}
-                          onPress={() => setExpandedAlbumId(expandedAlbumId === album.id ? null : album.id)}
-                        >
+                        <TouchableOpacity style={[styles.trackCard, { backgroundColor: theme.card, borderColor: '#00ffcc33' }]} onPress={() => setExpandedAlbumId(expandedAlbumId === album.id ? null : album.id)}>
                           <View style={{ width: 48, height: 48, borderRadius: 24, overflow: 'hidden', backgroundColor: theme.surface, justifyContent: 'center', alignItems: 'center', marginRight: 15 }}>
-                            {album.image ? (
-                              <Image source={{ uri: album.image }} style={{ width: 48, height: 48 }} />
-                            ) : (
-                              <Ionicons name="film-outline" size={24} color="#00ffcc" />
-                            )}
+                            {album.image ? <Image source={{ uri: album.image }} style={{ width: 48, height: 48 }} /> : <Ionicons name="film-outline" size={24} color="#00ffcc" />}
                           </View>
                           <View style={styles.trackInfo}>
                             <Text numberOfLines={1} style={[styles.trackTitle, { color: '#00ffcc' }]}>{album.name}</Text>
                             <Text style={[styles.trackArtist, { color: theme.subtext }]}>{album.songs.length} songs</Text>
                           </View>
-                          <Ionicons
-                            name={expandedAlbumId === album.id ? 'chevron-up' : 'chevron-down'}
-                            size={20} color="#00ffcc" style={{ marginRight: 4 }}
-                          />
+                          <Ionicons name={expandedAlbumId === album.id ? 'chevron-up' : 'chevron-down'} size={20} color="#00ffcc" style={{ marginRight: 4 }} />
                         </TouchableOpacity>
                         {expandedAlbumId === album.id && (
                           <View style={{ paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: '#00ffcc33', marginLeft: 16, marginTop: 4 }}>
@@ -1031,117 +1032,97 @@ export default function App() {
                 </ScrollView>
               </>
             ) : (
-              /* Home content — genres + artists */
               <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-                {/* Browse by Mood — 3-col 2-row grid */}
+
+                {/* Recently Played */}
+                {recentlyPlayed.length > 0 && (
+                  <>
+                    <Text style={[styles.sectionHeader, { color: theme.subtext }]}>Recently Played</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                      {recentlyPlayed.map((song, i) => (
+                        <TouchableOpacity key={i} style={styles.recentCard} onPress={() => handleTrackPress(song)}>
+                          <View style={{ width: 68, height: 68, borderRadius: 14, overflow: 'hidden', backgroundColor: theme.surface, marginBottom: 8, borderWidth: activeTrack?.id === song.id ? 2 : 0, borderColor: moodColor }}>
+                            {song.image ? <Image source={{ uri: song.image }} style={{ width: 68, height: 68 }} /> : <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><Ionicons name="musical-note" size={24} color={moodColor} /></View>}
+                          </View>
+                          <Text numberOfLines={1} style={{ color: activeTrack?.id === song.id ? moodColor : theme.text, fontSize: 11, fontWeight: '600', width: 72, textAlign: 'center' }}>{song.title}</Text>
+                          <Text numberOfLines={1} style={{ color: theme.subtext, fontSize: 10, width: 72, textAlign: 'center' }}>{song.artist}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </>
+                )}
+
+                {/* Browse by Mood */}
                 <Text style={[styles.sectionHeader, { color: theme.subtext }]}>Browse by Mood</Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
                   {[
-                    { label: '\u2764\ufe0f Romantic', mood: 'romantic', color: '#d41051' },
-                    { label: '\ud83d\ude22 Sad',      mood: 'sad',      color: '#502db0' },
-                    { label: '\ud83c\udf89 Party',    mood: 'item',     color: '#ff1900' },
-                    { label: '\ud83c\udfb6 90s',      mood: '90s',      color: '#d55e14' },
-                    { label: '\ud83d\ude4f Bhajan',   mood: 'bhajan',   color: '#e51ae8' },
-                    { label: '\u26a1 Energy',         mood: 'energetic',color: '#4000ff' },
+                    { label: '❤️ Romantic', mood: 'romantic', color: '#d41051' },
+                    { label: '😢 Sad',      mood: 'sad',      color: '#502db0' },
+                    { label: '🎉 Party',    mood: 'item',     color: '#ff1900' },
+                    { label: '🎶 90s',      mood: '90s',      color: '#d55e14' },
+                    { label: '🙏 Bhajan',   mood: 'bhajan',   color: '#e51ae8' },
+                    { label: '⚡ Energy',   mood: 'energetic',color: '#4000ff' },
                   ].map(g => (
                     <TouchableOpacity key={g.mood}
-                      style={{ width: '31%', backgroundColor: g.color + '22', borderWidth: 1.5,
-                        borderColor: g.color + '88', borderRadius: 14, paddingVertical: 14,
-                        alignItems: 'center', justifyContent: 'center' }}
-                      onPress={() => {
-                        setCurrentMood(g.mood);
-                        setSearchQuery(g.label.split(' ').slice(1).join(' ') + ' songs');
-                      }}
-                    >
+                      style={{ width: '31%', backgroundColor: g.color + '22', borderWidth: 1.5, borderColor: g.color + '88', borderRadius: 14, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' }}
+                      onPress={() => { setCurrentMood(g.mood); setSearchQuery(g.label.split(' ').slice(1).join(' ') + ' songs'); }}>
                       <Text style={{ fontSize: 22, marginBottom: 4 }}>{g.label.split(' ')[0]}</Text>
-                      <Text style={{ color: g.color, fontWeight: '700', fontSize: 12 }}>
-                        {g.label.split(' ').slice(1).join(' ')}
-                      </Text>
+                      <Text style={{ color: g.color, fontWeight: '700', fontSize: 12 }}>{g.label.split(' ').slice(1).join(' ')}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
 
-                {/* Top Artists — 2-col vertical grid */}
+                {/* Trending Now */}
+                <Text style={[styles.sectionHeader, { color: theme.subtext }]}>Trending Now 🔥</Text>
+                {trendingSongs.length > 0 ? (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                    {trendingSongs.map((song, i) => (
+                      <TouchableOpacity key={i} style={styles.trendingCard} onPress={() => handleTrackPress(song)}>
+                        <View style={{ width: 120, height: 120, borderRadius: 14, overflow: 'hidden', backgroundColor: theme.surface, marginBottom: 8 }}>
+                          {song.image ? <Image source={{ uri: song.image }} style={{ width: 120, height: 120 }} /> : <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><Ionicons name="musical-note" size={32} color={moodColor} /></View>}
+                          <View style={styles.trendingRank}><Text style={{ color: '#fff', fontSize: 11, fontWeight: 'bold' }}>#{i + 1}</Text></View>
+                        </View>
+                        <Text numberOfLines={1} style={{ color: theme.text, fontSize: 12, fontWeight: '600', width: 120 }}>{song.title}</Text>
+                        <Text numberOfLines={1} style={{ color: theme.subtext, fontSize: 11, width: 120 }}>{song.artist}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                ) : (
+                  <View style={{ height: 80, justifyContent: 'center', alignItems: 'center', marginBottom: 20 }}>
+                    <ActivityIndicator size="small" color={moodColor} />
+                    <Text style={{ color: theme.subtext, fontSize: 12, marginTop: 8 }}>Loading trending songs...</Text>
+                  </View>
+                )}
+
+                {/* Top Artists */}
                 <Text style={[styles.sectionHeader, { color: theme.subtext }]}>Top Artists</Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 20 }}>
                   {topArtists.map((artist, i) => (
-                    <TouchableOpacity key={i}
-                      style={{ width: '48%', backgroundColor: theme.card, borderRadius: 14,
-                        padding: 12, marginBottom: 12, alignItems: 'center', borderWidth: 1,
-                        borderColor: theme.border }}
-                      onPress={() => fetchArtist(artist)}>
-                      {/* Circular artist image */}
-                      <View style={{ width: 72, height: 72, borderRadius: 36, overflow: 'hidden',
-                        backgroundColor: theme.surface, borderWidth: 2.5, borderColor: moodColor + '55', marginBottom: 8 }}>
-                        {artist.image ? (
-                          <Image source={{ uri: artist.image }} style={{ width: 72, height: 72, borderRadius: 36 }}
-                            defaultSource={require('./assets/icon.png')} />
-                        ) : (
-                          <View style={{ width: 72, height: 72, borderRadius: 36, alignItems: 'center',
-                            justifyContent: 'center', backgroundColor: moodColor + '33' }}>
-                            <Text style={{ color: '#fff', fontSize: 26, fontWeight: 'bold' }}>
-                              {artist.name.charAt(0).toUpperCase()}
-                            </Text>
+                    <TouchableOpacity key={i} style={{ width: '48%', backgroundColor: theme.card, borderRadius: 14, padding: 12, marginBottom: 12, alignItems: 'center', borderWidth: 1, borderColor: theme.border }} onPress={() => fetchArtist(artist)}>
+                      <View style={{ width: 72, height: 72, borderRadius: 36, overflow: 'hidden', backgroundColor: theme.surface, borderWidth: 2.5, borderColor: moodColor + '55', marginBottom: 8 }}>
+                        {artist.image ? (<Image source={{ uri: artist.image }} style={{ width: 72, height: 72, borderRadius: 36 }} defaultSource={require('./assets/icon.png')} />) : (
+                          <View style={{ width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', backgroundColor: moodColor + '33' }}>
+                            <Text style={{ color: '#fff', fontSize: 26, fontWeight: 'bold' }}>{artist.name.charAt(0).toUpperCase()}</Text>
                           </View>
                         )}
                       </View>
-                      <Text numberOfLines={1} style={{ color: theme.text, fontSize: 12, fontWeight: '700', textAlign: 'center' }}>
-                        {artist.name}
-                      </Text>
+                      <Text numberOfLines={1} style={{ color: theme.text, fontSize: 12, fontWeight: '700', textAlign: 'center' }}>{artist.name}</Text>
                     </TouchableOpacity>
                   ))}
-                </View>
-
-                {/* Trending placeholder */}
-                <Text style={styles.sectionHeader}>Trending Now 🔥</Text>
-                <View style={styles.centeredBody}>
-                  <Ionicons name="search-outline" size={48} color="#3a3a50" style={{ marginBottom: 12 }} />
-                  <Text style={styles.subText}>Search for any song above to get started</Text>
                 </View>
               </ScrollView>
             )}
           </View>
         )}
 
-        {/* ARTISTS */}
-        {currentScreen === 'artists' && (
-          <View style={styles.screenBody}>
-            <Text style={styles.sectionHeader}>Top Bollywood Artists</Text>
-            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', paddingBottom: 20 }}>
-                {topArtists.map((artist, i) => (
-                  <TouchableOpacity
-                    key={i}
-                    style={{ width: '47%', marginBottom: 16, alignItems: 'center', backgroundColor: '#12122a', borderRadius: 14, padding: 14 }}
-                    onPress={() => fetchArtist(artist)}
-                  >
-                    <View style={{ width: 80, height: 80, borderRadius: 40, overflow: 'hidden', marginBottom: 10, backgroundColor: '#1a1a3e', borderWidth: 2, borderColor: '#00ffcc33' }}>
-                      {artist.image ? (
-                        <Image source={{ uri: artist.image }} style={{ width: 80, height: 80 }} defaultSource={require('./assets/icon.png')} />
-                      ) : (
-                        <View style={{ width: 80, height: 80, alignItems: 'center', justifyContent: 'center' }}>
-                          <Ionicons name="person" size={36} color="#00ffcc" />
-                        </View>
-                      )}
-                    </View>
-                    <Text numberOfLines={1} style={{ color: '#fff', fontSize: 12, fontWeight: '700', textAlign: 'center' }}>{artist.name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-          </View>
-        )}
-
-        {/* ARTIST PROFILE (from home) */}
+        {/* ARTIST PROFILE */}
         {currentScreen === 'artist_profile' && (
           <View style={styles.screenBody}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
               <TouchableOpacity onPress={() => setCurrentScreen('all_songs')} style={{ paddingRight: 14 }}>
                 <Ionicons name="arrow-back" size={24} color="#fff" />
               </TouchableOpacity>
-              {activeArtist?.image ? (
-                <Image source={{ uri: activeArtist.image }} style={{ width: 50, height: 50, borderRadius: 25, marginRight: 12 }} />
-              ) : (
+              {activeArtist?.image ? (<Image source={{ uri: activeArtist.image }} style={{ width: 50, height: 50, borderRadius: 25, marginRight: 12 }} />) : (
                 <View style={{ width: 50, height: 50, borderRadius: 25, backgroundColor: '#1a1a3e', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
                   <Ionicons name="person" size={24} color="#00ffcc" />
                 </View>
@@ -1152,10 +1133,7 @@ export default function App() {
               </View>
             </View>
             {artistLoading ? (
-              <View style={styles.centeredBody}>
-                <ActivityIndicator color="#00ffcc" size="large" />
-                <Text style={[styles.subText, { marginTop: 12 }]}>Loading songs...</Text>
-              </View>
+              <View style={styles.centeredBody}><ActivityIndicator color="#00ffcc" size="large" /><Text style={[styles.subText, { marginTop: 12 }]}>Loading songs...</Text></View>
             ) : (
               <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
                 {artistTracks.map(song => renderTrackCard(song, activeTrack?.id === song.id, isTrackFavorite(song.id)))}
@@ -1176,20 +1154,17 @@ export default function App() {
                 <TouchableOpacity key={pl.id} style={[styles.playlistCard, { position: 'relative' }]}
                   onPress={() => { setActivePlaylistId(pl.id); setCurrentScreen('playlist_view'); }}
                   onLongPress={() => {
-                    Alert.alert('Delete Playlist', `Delete "${pl.name}"? This cannot be undone.`,
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Delete', style: 'destructive', onPress: async () => {
-                          try {
-                            const json = await apiCall(`/api/user/playlists/${pl.id}`, 'DELETE');
-                            if (json.success) setPlaylists(json.data.playlists);
-                            else setPlaylists(prev => prev.filter(p => p.id !== pl.id));
-                          } catch { setPlaylists(prev => prev.filter(p => p.id !== pl.id)); }
-                        }}
-                      ]
-                    );
-                  }}
-                >
+                    showAlert('Delete Playlist', `Delete "${pl.name}"? This cannot be undone.`, [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Delete', style: 'destructive', onPress: async () => {
+                        try {
+                          const json = await apiCall(`/api/user/playlists/${pl.id}`, 'DELETE');
+                          if (json.success) setPlaylists(json.data.playlists);
+                          else setPlaylists(prev => prev.filter(p => p.id !== pl.id));
+                        } catch { setPlaylists(prev => prev.filter(p => p.id !== pl.id)); }
+                      }},
+                    ]);
+                  }}>
                   <Ionicons name="albums-outline" size={32} color="#fff" />
                   <Text numberOfLines={1} style={styles.playlistName}>{pl.name}</Text>
                   <Text style={{ color: '#ff444466', fontSize: 9, marginTop: 2 }}>Hold to delete</Text>
@@ -1234,14 +1209,12 @@ export default function App() {
                   const isCurrent = activeTrack?.id === song.id;
                   const isFav = isTrackFavorite(song.id);
                   return (
-                    <TouchableOpacity key={song.id} style={[styles.trackCard, { backgroundColor: theme.card, borderColor: isCurrent ? moodColor + '44' : 'transparent' }]} onPress={() => handleTrackPress(song)}>
-                      {/* Circular album art */}
+                    <TouchableOpacity key={song.id}
+                      style={[styles.trackCard, { backgroundColor: theme.card, borderColor: isCurrent ? moodColor + '44' : 'transparent' }]}
+                      onPress={() => handleTrackPress(song)}
+                      onLongPress={() => { setContextMenuSong(song); setContextMenuVisible(true); }}>
                       <View style={{ width: 48, height: 48, borderRadius: 24, overflow: 'hidden', backgroundColor: theme.surface, justifyContent: 'center', alignItems: 'center', marginRight: 15 }}>
-                        {song.image ? (
-                          <Image source={{ uri: song.image }} style={{ width: 48, height: 48 }} />
-                        ) : (
-                          <Ionicons name={isCurrent && isPlaying ? 'pause' : 'disc-outline'} size={24} color={isCurrent ? moodColor : '#8e8e93'} />
-                        )}
+                        {song.image ? <Image source={{ uri: song.image }} style={{ width: 48, height: 48 }} /> : <Ionicons name={isCurrent && isPlaying ? 'pause' : 'disc-outline'} size={24} color={isCurrent ? moodColor : '#8e8e93'} />}
                       </View>
                       <View style={styles.trackInfo}>
                         <Text numberOfLines={1} style={[styles.trackTitle, { color: isCurrent ? moodColor : theme.text }]}>{song.title}</Text>
@@ -1269,7 +1242,7 @@ export default function App() {
         {currentScreen === 'settings' && (
           <View style={styles.screenBody}>
             <ScrollView showsVerticalScrollIndicator={false}>
-              {/* Profile card */}
+              {/* Profile */}
               <View style={[styles.settingRow, { marginBottom: 15 }]}>
                 <View style={styles.textGroup}>
                   <Text style={styles.settingTitle}>Signed in as {username}</Text>
@@ -1280,35 +1253,66 @@ export default function App() {
                 </TouchableOpacity>
               </View>
 
-              {/* Dark / Light mode toggle */}
+              {/* Dark mode */}
               <View style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1 }]}>
                 <View style={styles.textGroup}>
                   <Text style={[styles.settingTitle, { color: theme.text }]}>{isDarkMode ? '🌙 Dark Mode' : '☀️ Light Mode'}</Text>
                   <Text style={[styles.settingDesc, { color: theme.subtext }]}>{isDarkMode ? 'Switch to light theme' : 'Switch to dark theme'}</Text>
                 </View>
-                <Switch value={isDarkMode} onValueChange={setIsDarkMode}
-                  trackColor={{ false: '#ccc', true: moodColor }} thumbColor="#ffffff" />
+                <Switch value={isDarkMode} onValueChange={setIsDarkMode} trackColor={{ false: '#ccc', true: moodColor }} thumbColor="#ffffff" />
               </View>
 
-              {/* Smart Autoplay toggle */}
+              {/* Smart Autoplay */}
               <View style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card }]}>
                 <View style={styles.textGroup}>
                   <Text style={[styles.settingTitle, { color: theme.text }]}>🤖 Smart Auto-Play</Text>
-                  <Text style={[styles.settingDesc, { color: theme.subtext }]}>Plays songs based on your current mood automatically</Text>
+                  <Text style={[styles.settingDesc, { color: theme.subtext }]}>Plays songs based on your mood automatically</Text>
                 </View>
-                <Switch value={smartAutoplay} onValueChange={(v) => { setSmartAutoplay(v); updateSetting('smart_autoplay', v); }}
-                  trackColor={{ false: '#252545', true: moodColor }} thumbColor="#ffffff" />
+                <Switch value={smartAutoplay} onValueChange={(v) => { setSmartAutoplay(v); updateSetting('smart_autoplay', v); }} trackColor={{ false: '#252545', true: moodColor }} thumbColor="#ffffff" />
               </View>
 
-              {/* Shake toggle */}
+              {/* Shake */}
               <View style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card }]}>
                 <View style={styles.textGroup}>
                   <Text style={[styles.settingTitle, { color: theme.text }]}>📳 Shake to Skip</Text>
-                  <Text style={[styles.settingDesc, { color: theme.subtext }]}>Shake your phone to skip to the next song</Text>
+                  <Text style={[styles.settingDesc, { color: theme.subtext }]}>Shake phone to play a same-genre song</Text>
                 </View>
-                <Switch value={shakeEnabled} onValueChange={(v) => { setShakeEnabled(v); updateSetting('shake_enabled', v); }}
-                  trackColor={{ false: '#252545', true: moodColor }} thumbColor="#ffffff" />
+                <Switch value={shakeEnabled} onValueChange={(v) => { setShakeEnabled(v); updateSetting('shake_enabled', v); }} trackColor={{ false: '#252545', true: moodColor }} thumbColor="#ffffff" />
               </View>
+
+              {/* Sleep Timer */}
+              <View style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card, flexDirection: 'column', alignItems: 'flex-start' }]}>
+                <Text style={[styles.settingTitle, { color: theme.text, marginBottom: 12 }]}>
+                  😴 Sleep Timer {sleepTimer > 0 ? `— ${Math.floor(sleepRemaining / 60)}:${String(sleepRemaining % 60).padStart(2, '0')} left` : ''}
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
+                  {[0, 15, 30, 60].map(min => (
+                    <TouchableOpacity key={min}
+                      style={{ paddingHorizontal: 18, paddingVertical: 8, borderRadius: 20, backgroundColor: sleepTimer === min ? moodColor : '#1a1a3e', borderWidth: 1, borderColor: sleepTimer === min ? moodColor : '#333' }}
+                      onPress={() => setSleepTimerDuration(min)}>
+                      <Text style={{ color: sleepTimer === min ? '#050515' : '#fff', fontWeight: '600', fontSize: 13 }}>{min === 0 ? 'Off' : `${min} min`}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Crossfade */}
+              <View style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card }]}>
+                <View style={styles.textGroup}>
+                  <Text style={[styles.settingTitle, { color: theme.text }]}>🎵 Crossfade</Text>
+                  <Text style={[styles.settingDesc, { color: theme.subtext }]}>Smooth transition between songs</Text>
+                </View>
+                <Switch value={crossfadeEnabled} onValueChange={setCrossfadeEnabled} trackColor={{ false: '#252545', true: moodColor }} thumbColor="#ffffff" />
+              </View>
+
+              {/* Equalizer */}
+              <TouchableOpacity style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card }]} onPress={() => setShowEqualizerModal(true)}>
+                <View style={styles.textGroup}>
+                  <Text style={[styles.settingTitle, { color: theme.text }]}>🎛️ Equalizer</Text>
+                  <Text style={[styles.settingDesc, { color: theme.subtext }]}>Adjust Bass, Mid & Treble</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={theme.subtext} />
+              </TouchableOpacity>
 
               {/* Stats */}
               <View style={[styles.settingRow, { marginBottom: 15, flexDirection: 'column', alignItems: 'flex-start', backgroundColor: theme.card }]}>
@@ -1317,6 +1321,7 @@ export default function App() {
                   <View style={styles.statBadge}><Text style={styles.statNumber}>{favorites.length}</Text><Text style={styles.statLabel}>Favorites</Text></View>
                   <View style={styles.statBadge}><Text style={styles.statNumber}>{playlists.length}</Text><Text style={styles.statLabel}>Playlists</Text></View>
                   <View style={styles.statBadge}><Text style={styles.statNumber}>{downloads.length}</Text><Text style={styles.statLabel}>Downloads</Text></View>
+                  <View style={styles.statBadge}><Text style={styles.statNumber}>{recentlyPlayed.length}</Text><Text style={styles.statLabel}>Listened</Text></View>
                 </View>
               </View>
             </ScrollView>
@@ -1328,28 +1333,18 @@ export default function App() {
       {activeTrack && (
         <TouchableOpacity style={[styles.miniPlayer, { backgroundColor: theme.miniPlayerBg, borderTopColor: moodColor + '44' }]} activeOpacity={0.9} onPress={() => setIsFullScreen(true)}>
           <View style={styles.miniPlayerLeft}>
-            {activeTrack.image ? (
-              <Image source={{ uri: activeTrack.image }} style={{ width: 38, height: 38, borderRadius: 19, marginRight: 10 }} />
-            ) : (
-              <Ionicons name="musical-note" size={20} color={moodColor} style={{ marginRight: 10 }} />
-            )}
+            {activeTrack.image ? (<Image source={{ uri: activeTrack.image }} style={{ width: 38, height: 38, borderRadius: 19, marginRight: 10 }} />) : (<Ionicons name="musical-note" size={20} color={moodColor} style={{ marginRight: 10 }} />)}
             <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text numberOfLines={1} style={[styles.miniPlayerTitle, { flex: 1, color: theme.text }]}>{activeTrack.title}</Text>
-              </View>
+              <Text numberOfLines={1} style={[styles.miniPlayerTitle, { flex: 1, color: theme.text }]}>{activeTrack.title}</Text>
               <Text numberOfLines={1} style={[styles.miniPlayerArtist, { color: moodColor }]}>{activeTrack.artist}</Text>
             </View>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <TouchableOpacity onPress={playPrevious}>
-              <Ionicons name="play-skip-back" size={22} color={theme.text} />
-            </TouchableOpacity>
+            <TouchableOpacity onPress={playPrevious}><Ionicons name="play-skip-back" size={22} color={theme.text} /></TouchableOpacity>
             <TouchableOpacity onPress={togglePlayPause} style={[styles.miniPlayerPlayBtn, { backgroundColor: moodColor }]}>
               {isLoading ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name={isPlaying ? 'pause' : 'play'} size={22} color="#050515" />}
             </TouchableOpacity>
-            <TouchableOpacity onPress={playNext}>
-              <Ionicons name="play-skip-forward" size={22} color={theme.text} />
-            </TouchableOpacity>
+            <TouchableOpacity onPress={playNext}><Ionicons name="play-skip-forward" size={22} color={theme.text} /></TouchableOpacity>
           </View>
         </TouchableOpacity>
       )}
@@ -1357,13 +1352,13 @@ export default function App() {
       {/* BOTTOM NAV */}
       <View style={[styles.bottomNav, { backgroundColor: theme.navBg, borderTopColor: theme.border }]}>
         {[
-          { screen: 'all_songs',   icon: 'home',     label: 'Home'      },
-          { screen: 'library',     icon: 'library',  label: 'Library'   },
-          { screen: 'downloads',   icon: 'folder',   label: 'Downloads' },
-          { screen: 'settings',    icon: 'settings', label: 'Settings'  },
+          { screen: 'all_songs', icon: 'home',     label: 'Home'      },
+          { screen: 'library',   icon: 'library',  label: 'Library'   },
+          { screen: 'downloads', icon: 'folder',   label: 'Downloads' },
+          { screen: 'settings',  icon: 'settings', label: 'Settings'  },
         ].map(tab => {
           const active = currentScreen === tab.screen
-            || (tab.screen === 'library' && currentScreen === 'playlist_view')
+            || (tab.screen === 'library'   && currentScreen === 'playlist_view')
             || (tab.screen === 'all_songs' && currentScreen === 'artist_profile');
           return (
             <TouchableOpacity key={tab.screen} style={styles.navButton} onPress={() => {
@@ -1386,19 +1381,17 @@ export default function App() {
             <TouchableOpacity style={styles.authBtn} onPress={createNewPlaylist}>
               <Text style={styles.authBtnText}>Create {playlistSongTarget && '& Add'}</Text>
             </TouchableOpacity>
-            {playlistSongTarget && playlists.length > 0 && (
-              <>
-                <Text style={[styles.sectionHeader, { marginTop: 20 }]}>Existing Playlists</Text>
-                <ScrollView style={{ maxHeight: 150, width: '100%' }}>
-                  {playlists.map(pl => (
-                    <TouchableOpacity key={pl.id} style={styles.playlistListItem} onPress={() => addToPlaylist(pl.id)}>
-                      <Ionicons name="albums-outline" size={20} color="#00ffcc" style={{ marginRight: 10 }} />
-                      <Text style={{ color: '#fff', fontSize: 16 }}>{pl.name}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </>
-            )}
+            {playlistSongTarget && playlists.length > 0 && (<>
+              <Text style={[styles.sectionHeader, { marginTop: 20 }]}>Existing Playlists</Text>
+              <ScrollView style={{ maxHeight: 150, width: '100%' }}>
+                {playlists.map(pl => (
+                  <TouchableOpacity key={pl.id} style={styles.playlistListItem} onPress={() => addToPlaylist(pl.id)}>
+                    <Ionicons name="albums-outline" size={20} color="#00ffcc" style={{ marginRight: 10 }} />
+                    <Text style={{ color: '#fff', fontSize: 16 }}>{pl.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </>)}
             <TouchableOpacity onPress={() => { setPlaylistModalVisible(false); setPlaylistSongTarget(null); }} style={{ marginTop: 20 }}>
               <Text style={{ color: '#8e8e93' }}>Cancel</Text>
             </TouchableOpacity>
@@ -1417,11 +1410,7 @@ export default function App() {
             <View style={{ alignItems: 'center' }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Text style={styles.fullScreenHeaderText}>NOW PLAYING</Text>
-                {isYoutubeFallback && (
-                  <View style={{ backgroundColor: '#ff0000', borderRadius: 5, paddingHorizontal: 7, paddingVertical: 2 }}>
-                    <Text style={{ color: '#fff', fontSize: 10, fontWeight: 'bold', letterSpacing: 0.5 }}>YT</Text>
-                  </View>
-                )}
+                {isYoutubeFallback && (<View style={{ backgroundColor: '#ff0000', borderRadius: 5, paddingHorizontal: 7, paddingVertical: 2 }}><Text style={{ color: '#fff', fontSize: 10, fontWeight: 'bold' }}>YT</Text></View>)}
               </View>
               {currentMood !== 'default' && (
                 <View style={[styles.moodBadge, { backgroundColor: moodColor + '22', borderColor: moodColor + '55' }]}>
@@ -1438,23 +1427,12 @@ export default function App() {
 
           {/* Album Art + Ripples */}
           <View style={styles.animationContainer}>
-            <Animated.View style={[styles.breathingShadow, {
-              backgroundColor: moodColor + '40',
-              transform: [{ scale: ring1.interpolate({ inputRange: [0,0.5,1], outputRange: [1,1.15,1] }) }],
-              opacity: ring1.interpolate({ inputRange: [0,0.5,1], outputRange: [0.35,0.6,0.35] }),
-            }]} />
+            <Animated.View style={[styles.breathingShadow, { backgroundColor: moodColor + '40', transform: [{ scale: ring1.interpolate({ inputRange: [0,0.5,1], outputRange: [1,1.15,1] }) }], opacity: ring1.interpolate({ inputRange: [0,0.5,1], outputRange: [0.35,0.6,0.35] }) }]} />
             {[ring1, ring2, ring3].map((anim, i) => (
-              <Animated.View key={i} style={[styles.rippleRing, { borderColor: moodColor + '66',
-                transform: [{ scale: anim.interpolate({ inputRange: [0,1], outputRange: [1,1.5] }) }],
-                opacity: anim.interpolate({ inputRange: [0,1], outputRange: [0.5,0] }),
-              }]} />
+              <Animated.View key={i} style={[styles.rippleRing, { borderColor: moodColor + '66', transform: [{ scale: anim.interpolate({ inputRange: [0,1], outputRange: [1,1.5] }) }], opacity: anim.interpolate({ inputRange: [0,1], outputRange: [0.5,0] }) }]} />
             ))}
             <View style={styles.albumArtLarge}>
-              {activeTrack?.image ? (
-                <Image source={{ uri: activeTrack.image }} style={styles.albumImage} />
-              ) : (
-                <Ionicons name="disc-outline" size={100} color={moodColor} />
-              )}
+              {activeTrack?.image ? <Image source={{ uri: activeTrack.image }} style={styles.albumImage} /> : <Ionicons name="disc-outline" size={100} color={moodColor} />}
             </View>
           </View>
 
@@ -1463,9 +1441,7 @@ export default function App() {
             <View style={{ flex: 1 }}>
               <Text numberOfLines={2} style={styles.fullScreenTitle}>{activeTrack?.title}</Text>
               <Text numberOfLines={1} style={[styles.fullScreenArtist, { color: moodColor }]}>{activeTrack?.artist}</Text>
-              {autoplayReason.length > 0 && (
-                <Text style={[styles.autoplayReasonText, { color: moodColor + 'cc' }]}>{autoplayReason}</Text>
-              )}
+              {autoplayReason.length > 0 && <Text style={[styles.autoplayReasonText, { color: moodColor + 'cc' }]}>{autoplayReason}</Text>}
             </View>
             <TouchableOpacity onPress={() => activeTrack && toggleFavorite(activeTrack)}>
               <Ionicons name={activeTrack && isTrackFavorite(activeTrack.id) ? 'heart' : 'heart-outline'} size={32} color={activeTrack && isTrackFavorite(activeTrack.id) ? '#ff6b9d' : '#8e8e93'} />
@@ -1484,38 +1460,78 @@ export default function App() {
             </View>
           </View>
 
-          {/* Controls */}
+          {/* Controls row: Shuffle | Prev | Play | Next | Repeat */}
           <View style={styles.controlsContainer}>
-            <TouchableOpacity onPress={playPrevious}><Ionicons name="play-skip-back" size={40} color="#fff" /></TouchableOpacity>
+            <TouchableOpacity onPress={toggleShuffle}>
+              <Ionicons name="shuffle" size={26} color={isShuffled ? moodColor : '#444466'} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={playPrevious}>
+              <Ionicons name="play-skip-back" size={40} color="#fff" />
+            </TouchableOpacity>
             <TouchableOpacity onPress={togglePlayPause} style={[styles.largePlayBtn, { backgroundColor: moodColor }]}>
               {isLoading ? <ActivityIndicator size="large" color="#050515" /> : <Ionicons name={isPlaying ? 'pause' : 'play'} size={40} color="#050515" style={{ marginLeft: isPlaying ? 0 : 5 }} />}
             </TouchableOpacity>
-            <TouchableOpacity onPress={playNext}><Ionicons name="play-skip-forward" size={40} color="#fff" /></TouchableOpacity>
+            <TouchableOpacity onPress={playNext}>
+              <Ionicons name="play-skip-forward" size={40} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={toggleRepeat} style={{ position: 'relative' }}>
+              <Ionicons name={repeatMode === 'one' ? 'repeat-outline' : 'repeat'} size={26} color={repeatMode !== 'off' ? moodColor : '#444466'} />
+              {repeatMode === 'one' && (
+                <View style={{ position: 'absolute', top: -4, right: -5, width: 12, height: 12, borderRadius: 6, backgroundColor: moodColor, justifyContent: 'center', alignItems: 'center' }}>
+                  <Text style={{ color: '#000', fontSize: 7, fontWeight: 'bold' }}>1</Text>
+                </View>
+              )}
+            </TouchableOpacity>
           </View>
 
-          {/* Smart Autoplay Queue */}
-          {smartAutoplay && autoplayQueue.length > 0 && (
-            <View style={styles.queueContainer}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-                <Ionicons name="sparkles" size={14} color={moodColor} style={{ marginRight: 6 }} />
-                <Text style={[styles.queueHeader, { color: moodColor }]}>Up Next — Smart Queue</Text>
+          {/* Lyrics / Queue tabs */}
+          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 16, marginBottom: 10 }}>
+            <TouchableOpacity onPress={() => setShowLyrics(false)}
+              style={{ paddingHorizontal: 20, paddingVertical: 7, borderRadius: 20, backgroundColor: !showLyrics ? moodColor + '22' : 'transparent', borderWidth: 1, borderColor: !showLyrics ? moodColor : '#333' }}>
+              <Text style={{ color: !showLyrics ? moodColor : '#555', fontSize: 12, fontWeight: '700' }}>♪ QUEUE</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => { setShowLyrics(true); if (!lyrics && !lyricsLoading) fetchLyrics(activeTrack); }}
+              style={{ paddingHorizontal: 20, paddingVertical: 7, borderRadius: 20, backgroundColor: showLyrics ? moodColor + '22' : 'transparent', borderWidth: 1, borderColor: showLyrics ? moodColor : '#333' }}>
+              <Text style={{ color: showLyrics ? moodColor : '#555', fontSize: 12, fontWeight: '700' }}>📝 LYRICS</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Lyrics view */}
+          {showLyrics ? (
+            <ScrollView style={styles.queueContainer} showsVerticalScrollIndicator={false}>
+              {lyricsLoading ? (
+                <View style={{ padding: 20, alignItems: 'center' }}>
+                  <ActivityIndicator color={moodColor} />
+                  <Text style={{ color: '#666', marginTop: 8, fontSize: 13 }}>Loading lyrics...</Text>
+                </View>
+              ) : (
+                <Text style={{ color: '#ccc', fontSize: 15, lineHeight: 26, textAlign: 'center', padding: 10 }}>{lyrics || 'Tap LYRICS to load'}</Text>
+              )}
+            </ScrollView>
+          ) : (
+            smartAutoplay && autoplayQueue.length > 0 ? (
+              <View style={styles.queueContainer}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                  <Ionicons name="sparkles" size={14} color={moodColor} style={{ marginRight: 6 }} />
+                  <Text style={[styles.queueHeader, { color: moodColor }]}>Up Next — Smart Queue</Text>
+                </View>
+                {autoplayQueue.map((s, i) => (
+                  <TouchableOpacity key={i} style={styles.queueItem} onPress={() => { setIsFullScreen(false); handleTrackPress(s); }}>
+                    {s.image ? <Image source={{ uri: s.image }} style={{ width: 36, height: 36, borderRadius: 4, marginRight: 10 }} /> : <Ionicons name="musical-note" size={16} color="#8e8e93" style={{ marginRight: 10 }} />}
+                    <View style={{ flex: 1 }}>
+                      <Text numberOfLines={1} style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>{s.title}</Text>
+                      <Text numberOfLines={1} style={{ color: '#8e8e93', fontSize: 11 }}>{s.artist}</Text>
+                    </View>
+                    <Text style={{ color: moodColor, fontSize: 11 }}>#{i + 1}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
-              {autoplayQueue.map((s, i) => (
-                <TouchableOpacity key={i} style={styles.queueItem} onPress={() => { setIsFullScreen(false); handleTrackPress(s); }}>
-                  {s.image ? <Image source={{ uri: s.image }} style={{ width: 36, height: 36, borderRadius: 4, marginRight: 10 }} /> : <Ionicons name="musical-note" size={16} color="#8e8e93" style={{ marginRight: 10 }} />}
-                  <View style={{ flex: 1 }}>
-                    <Text numberOfLines={1} style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>{s.title}</Text>
-                    <Text numberOfLines={1} style={{ color: '#8e8e93', fontSize: 11 }}>{s.artist}</Text>
-                  </View>
-                  <Text style={{ color: moodColor, fontSize: 11 }}>#{i + 1}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            ) : null
           )}
         </View>
       </Modal>
 
-      {/* OPTIONS MENU */}
+      {/* OPTIONS MENU (3-dot) */}
       <Modal animationType="slide" transparent visible={isMenuVisible} onRequestClose={() => setMenuVisible(false)}>
         <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }} activeOpacity={1} onPress={() => setMenuVisible(false)}>
           <View style={{ backgroundColor: '#121225', paddingBottom: 40, borderTopLeftRadius: 20, borderTopRightRadius: 20 }}>
@@ -1532,8 +1548,102 @@ export default function App() {
               <Ionicons name={downloads.some(d => d.id === activeTrack?.id) ? 'cloud-done' : 'cloud-download-outline'} size={24} color={downloads.some(d => d.id === activeTrack?.id) ? '#00ffcc' : '#fff'} style={{ marginRight: 15 }} />
               <Text style={{ color: '#fff', fontSize: 18 }}>{downloads.some(d => d.id === activeTrack?.id) ? 'Downloaded' : 'Download Offline'}</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuVisible(false); if (activeTrack) shareSong(activeTrack); }}>
+              <Ionicons name="share-outline" size={24} color="#fff" style={{ marginRight: 15 }} />
+              <Text style={{ color: '#fff', fontSize: 18 }}>Share Song</Text>
+            </TouchableOpacity>
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* LONG-PRESS CONTEXT MENU */}
+      <Modal animationType="slide" transparent visible={contextMenuVisible} onRequestClose={() => setContextMenuVisible(false)}>
+        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }} activeOpacity={1} onPress={() => setContextMenuVisible(false)}>
+          <View style={{ backgroundColor: '#121225', paddingBottom: 40, borderTopLeftRadius: 20, borderTopRightRadius: 20 }}>
+            <View style={{ width: 40, height: 5, backgroundColor: '#3a3a50', borderRadius: 3, alignSelf: 'center', marginTop: 15, marginBottom: 5 }} />
+            {contextMenuSong && (
+              <View style={{ paddingHorizontal: 25, paddingBottom: 12 }}>
+                <Text numberOfLines={1} style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>{contextMenuSong.title}</Text>
+                <Text numberOfLines={1} style={{ color: '#8e8e93', fontSize: 13 }}>{contextMenuSong.artist}</Text>
+              </View>
+            )}
+            <TouchableOpacity style={styles.menuItem} onPress={() => { setContextMenuVisible(false); if (contextMenuSong) handleTrackPress(contextMenuSong); }}>
+              <Ionicons name="play-circle-outline" size={24} color={moodColor} style={{ marginRight: 15 }} />
+              <Text style={{ color: '#fff', fontSize: 18 }}>Play Now</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuItem} onPress={() => { setContextMenuVisible(false); if (contextMenuSong) addSingleToQueue(contextMenuSong); }}>
+              <Ionicons name="list-outline" size={24} color="#fff" style={{ marginRight: 15 }} />
+              <Text style={{ color: '#fff', fontSize: 18 }}>Add to Queue</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuItem} onPress={() => { setContextMenuVisible(false); if (contextMenuSong) { setPlaylistSongTarget(contextMenuSong); setPlaylistModalVisible(true); } }}>
+              <Ionicons name="add-circle-outline" size={24} color="#fff" style={{ marginRight: 15 }} />
+              <Text style={{ color: '#fff', fontSize: 18 }}>Add to Playlist</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuItem} onPress={() => { setContextMenuVisible(false); if (contextMenuSong) toggleFavorite(contextMenuSong); }}>
+              <Ionicons name={contextMenuSong && isTrackFavorite(contextMenuSong?.id) ? 'heart' : 'heart-outline'} size={24} color={contextMenuSong && isTrackFavorite(contextMenuSong?.id) ? '#ff6b9d' : '#fff'} style={{ marginRight: 15 }} />
+              <Text style={{ color: '#fff', fontSize: 18 }}>{contextMenuSong && isTrackFavorite(contextMenuSong?.id) ? 'Remove Favourite' : 'Add to Favourites'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuItem} onPress={() => { setContextMenuVisible(false); if (contextMenuSong) downloadSong(contextMenuSong); }}>
+              <Ionicons name="cloud-download-outline" size={24} color="#fff" style={{ marginRight: 15 }} />
+              <Text style={{ color: '#fff', fontSize: 18 }}>Download</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuItem} onPress={() => { setContextMenuVisible(false); if (contextMenuSong) shareSong(contextMenuSong); }}>
+              <Ionicons name="share-outline" size={24} color="#fff" style={{ marginRight: 15 }} />
+              <Text style={{ color: '#fff', fontSize: 18 }}>Share</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* EQUALIZER MODAL */}
+      <Modal animationType="slide" transparent visible={showEqualizerModal} onRequestClose={() => setShowEqualizerModal(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.78)', justifyContent: 'center', alignItems: 'center', padding: 28 }}>
+          <View style={{ width: '100%', backgroundColor: '#09091a', borderRadius: 22, borderWidth: 1.5, borderColor: moodColor + '55', padding: 28 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
+              <Ionicons name="pulse" size={22} color={moodColor} style={{ marginRight: 10 }} />
+              <Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold', letterSpacing: 2 }}>EQUALIZER</Text>
+            </View>
+            {[
+              { label: '🔊 Bass', value: eqBass, set: setEqBass },
+              { label: '🎵 Mid', value: eqMid, set: setEqMid },
+              { label: '🔆 Treble', value: eqTreble, set: setEqTreble },
+            ].map(eq => (
+              <View key={eq.label} style={{ marginBottom: 22 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <Text style={{ color: '#ccc', fontWeight: '600', fontSize: 14 }}>{eq.label}</Text>
+                  <Text style={{ color: moodColor, fontWeight: '700', fontSize: 14 }}>{Math.round((eq.value - 0.5) * 20) >= 0 ? '+' : ''}{Math.round((eq.value - 0.5) * 20)} dB</Text>
+                </View>
+                {/* Visual bar */}
+                <View style={{ height: 5, backgroundColor: '#1a1a3a', borderRadius: 3, marginBottom: 10, overflow: 'hidden' }}>
+                  <View style={{ width: `${eq.value * 100}%`, height: '100%', backgroundColor: moodColor, borderRadius: 3 }} />
+                </View>
+                {/* Tap presets */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  {[-10, -5, 0, 5, 10].map(db => {
+                    const v = db / 20 + 0.5;
+                    const active = Math.abs(eq.value - v) < 0.08;
+                    return (
+                      <TouchableOpacity key={db} onPress={() => eq.set(v)}
+                        style={{ width: 48, height: 36, borderRadius: 18, backgroundColor: active ? moodColor : '#1a1a3a', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: active ? moodColor : '#2a2a4a' }}>
+                        <Text style={{ color: active ? '#000' : '#666', fontSize: 11, fontWeight: '700' }}>{db >= 0 ? '+' : ''}{db}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            ))}
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
+              <TouchableOpacity onPress={() => { setEqBass(0.5); setEqMid(0.5); setEqTreble(0.5); }}
+                style={{ flex: 1, height: 46, borderRadius: 23, backgroundColor: '#1a1a3a', justifyContent: 'center', alignItems: 'center' }}>
+                <Text style={{ color: '#888', fontWeight: '600' }}>Reset</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowEqualizerModal(false)}
+                style={{ flex: 1, height: 46, borderRadius: 23, backgroundColor: moodColor, justifyContent: 'center', alignItems: 'center' }}>
+                <Text style={{ color: '#050515', fontWeight: 'bold' }}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
 
     </View>
@@ -1551,14 +1661,16 @@ const styles = StyleSheet.create({
   screenBody:  { flex: 1, padding: 20 },
   centeredBody:{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 },
 
-  authContainer: { flex: 1, backgroundColor: '#05050f', justifyContent: 'center', padding: 30 },
-  authBox:       { alignItems: 'center', backgroundColor: '#0b0b18', padding: 30, borderRadius: 20, borderWidth: 1, borderColor: '#121225' },
-  authTitle:     { color: '#fff', fontSize: 28, fontWeight: 'bold', letterSpacing: 3, marginBottom: 5 },
-  authSubtitle:  { color: '#8e8e93', fontSize: 14, marginBottom: 30 },
-  authInput:     { width: '100%', backgroundColor: '#121225', color: '#fff', borderRadius: 10, height: 55, paddingHorizontal: 15, marginBottom: 15, fontSize: 16 },
-  authBtn:       { width: '100%', backgroundColor: '#00ffcc', height: 55, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
-  authBtnText:   { color: '#050515', fontWeight: 'bold', fontSize: 16, letterSpacing: 1 },
-  authSwitchText:{ color: '#00ffcc', fontSize: 14 },
+  authContainer:  { flex: 1, backgroundColor: '#05050f', justifyContent: 'center', padding: 30 },
+  authBox:        { alignItems: 'center', backgroundColor: '#0b0b18', padding: 30, borderRadius: 20, borderWidth: 1, borderColor: '#121225' },
+  authTitle:      { color: '#fff', fontSize: 28, fontWeight: 'bold', letterSpacing: 3, marginBottom: 5 },
+  authSubtitle:   { color: '#8e8e93', fontSize: 14, marginBottom: 30 },
+  authInput:      { width: '100%', backgroundColor: '#121225', color: '#fff', borderRadius: 10, height: 55, paddingHorizontal: 15, marginBottom: 15, fontSize: 16 },
+  authBtn:        { width: '100%', backgroundColor: '#00ffcc', height: 55, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
+  authBtnText:    { color: '#050515', fontWeight: 'bold', fontSize: 16, letterSpacing: 1 },
+  authSwitchText: { color: '#00ffcc', fontSize: 14 },
+  backToLoginBtn:  { flexDirection: 'row', alignItems: 'center', marginTop: 22, paddingVertical: 10, paddingHorizontal: 22, borderRadius: 25, borderWidth: 1.5, borderColor: '#00ffcc55', backgroundColor: '#00ffcc11', gap: 8 },
+  backToLoginText: { color: '#00ffcc', fontSize: 14, fontWeight: '600' },
 
   searchBox:       { flexDirection: 'row', alignItems: 'center', backgroundColor: '#121225', paddingHorizontal: 15, borderRadius: 12, height: 50, marginBottom: 8 },
   input:           { color: '#fff', flex: 1, fontSize: 16 },
@@ -1568,23 +1680,27 @@ const styles = StyleSheet.create({
   historyItemText: { color: '#ccc', fontSize: 15, flex: 1 },
   sectionHeader:   { color: '#8e8e93', fontSize: 14, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 15, letterSpacing: 1 },
 
-  trackCard:          { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0b0b18', padding: 12, borderRadius: 14, marginBottom: 12, borderWidth: 1, borderColor: 'transparent' },
-  activeTrackCard:    { borderColor: '#00ffcc44', backgroundColor: '#0c1d24' },
-  albumArtPlaceholder:{ width: 48, height: 48, backgroundColor: '#151530', borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-  trackInfo:          { flex: 1, marginRight: 10 },
-  trackTitle:         { color: '#fff', fontSize: 15, fontWeight: '600', marginBottom: 4 },
-  trackArtist:        { color: '#8e8e93', fontSize: 12 },
-  mainText:           { color: '#fff', fontSize: 20, fontWeight: 'bold', marginBottom: 8 },
-  subText:            { color: '#8e8e93', fontSize: 14, textAlign: 'center', lineHeight: 20 },
+  trackCard:           { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0b0b18', padding: 12, borderRadius: 14, marginBottom: 12, borderWidth: 1, borderColor: 'transparent' },
+  activeTrackCard:     { borderColor: '#00ffcc44', backgroundColor: '#0c1d24' },
+  albumArtPlaceholder: { width: 48, height: 48, backgroundColor: '#151530', borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+  trackInfo:           { flex: 1, marginRight: 10 },
+  trackTitle:          { color: '#fff', fontSize: 15, fontWeight: '600', marginBottom: 4 },
+  trackArtist:         { color: '#8e8e93', fontSize: 12 },
+  mainText:            { color: '#fff', fontSize: 20, fontWeight: 'bold', marginBottom: 8 },
+  subText:             { color: '#8e8e93', fontSize: 14, textAlign: 'center', lineHeight: 20 },
+
+  recentCard:    { width: 84, alignItems: 'center', marginRight: 12 },
+  trendingCard:  { width: 132, marginRight: 14 },
+  trendingRank:  { position: 'absolute', top: 8, left: 8, backgroundColor: 'rgba(0,0,0,0.72)', borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2 },
 
   playlistCard:     { width: 100, height: 100, backgroundColor: '#151530', borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
   playlistName:     { color: '#fff', fontSize: 14, fontWeight: '600', marginTop: 8 },
   playlistListItem: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#121225', borderRadius: 8, marginBottom: 8 },
 
-  settingRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#0b0b18', padding: 20, borderRadius: 16 },
-  textGroup:   { flex: 1, paddingRight: 15 },
-  settingTitle:{ color: '#fff', fontSize: 16, fontWeight: '600', marginBottom: 6 },
-  settingDesc: { color: '#8e8e93', fontSize: 13, lineHeight: 18 },
+  settingRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#0b0b18', padding: 20, borderRadius: 16 },
+  textGroup:    { flex: 1, paddingRight: 15 },
+  settingTitle: { color: '#fff', fontSize: 16, fontWeight: '600', marginBottom: 6 },
+  settingDesc:  { color: '#8e8e93', fontSize: 13, lineHeight: 18 },
 
   statBadge:  { backgroundColor: '#121225', padding: 12, borderRadius: 10, alignItems: 'center', minWidth: 70 },
   statNumber: { color: '#00ffcc', fontSize: 22, fontWeight: 'bold' },
@@ -1596,9 +1712,9 @@ const styles = StyleSheet.create({
   miniPlayerArtist: { fontSize: 12, marginTop: 2 },
   miniPlayerPlayBtn:{ width: 38, height: 38, borderRadius: 19, justifyContent: 'center', alignItems: 'center' },
 
-  bottomNav:  { flexDirection: 'row', backgroundColor: '#050515', height: 75, borderTopWidth: 1, borderTopColor: '#121225', paddingBottom: 15, justifyContent: 'space-around', alignItems: 'center' },
-  navButton:  { alignItems: 'center', justifyContent: 'center', flex: 1 },
-  navText:    { fontSize: 11, marginTop: 4, fontWeight: '500' },
+  bottomNav: { flexDirection: 'row', backgroundColor: '#050515', height: 75, borderTopWidth: 1, borderTopColor: '#121225', paddingBottom: 15, justifyContent: 'space-around', alignItems: 'center' },
+  navButton: { alignItems: 'center', justifyContent: 'center', flex: 1 },
+  navText:   { fontSize: 11, marginTop: 4, fontWeight: '500' },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   modalContent: { width: '100%', backgroundColor: '#0b0b18', padding: 25, borderRadius: 20, alignItems: 'center', borderWidth: 1, borderColor: '#121225' },
@@ -1609,27 +1725,27 @@ const styles = StyleSheet.create({
   fullScreenHeaderText: { color: '#8e8e93', fontSize: 12, fontWeight: 'bold', letterSpacing: 2 },
   moodBadge:            { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, borderWidth: 1, marginTop: 4 },
   moodBadgeText:        { fontSize: 11, fontWeight: '600' },
-  animationContainer:   { width: '100%', alignItems: 'center', justifyContent: 'center', marginBottom: 30, height: 260 },
-  albumArtLarge:        { width: 200, height: 200, borderRadius: 100, backgroundColor: '#0b0b18', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#121225', overflow: 'hidden', zIndex: 10, elevation: 15 },
+  animationContainer:   { width: '100%', alignItems: 'center', justifyContent: 'center', marginBottom: 20, height: 240 },
+  albumArtLarge:        { width: 190, height: 190, borderRadius: 95, backgroundColor: '#0b0b18', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#121225', overflow: 'hidden', zIndex: 10, elevation: 15 },
   albumImage:           { width: '100%', height: '100%', resizeMode: 'cover' },
-  breathingShadow:      { position: 'absolute', width: 220, height: 220, borderRadius: 110, zIndex: 1 },
-  rippleRing:           { position: 'absolute', width: 220, height: 220, borderRadius: 110, borderWidth: 1.5, zIndex: 2 },
-  fullScreenInfo:       { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 15 },
-  fullScreenTitle:      { color: '#fff', fontSize: 22, fontWeight: 'bold', marginBottom: 6 },
-  fullScreenArtist:     { fontSize: 16 },
-  autoplayReasonText:   { fontSize: 12, marginTop: 6, fontStyle: 'italic' },
+  breathingShadow:      { position: 'absolute', width: 210, height: 210, borderRadius: 105, zIndex: 1 },
+  rippleRing:           { position: 'absolute', width: 210, height: 210, borderRadius: 105, borderWidth: 1.5, zIndex: 2 },
+  fullScreenInfo:       { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 },
+  fullScreenTitle:      { color: '#fff', fontSize: 20, fontWeight: 'bold', marginBottom: 4 },
+  fullScreenArtist:     { fontSize: 15 },
+  autoplayReasonText:   { fontSize: 12, marginTop: 4, fontStyle: 'italic' },
 
-  sliderSection:    { width: '100%', marginBottom: 30, paddingHorizontal: 5 },
-  progressBarBg:    { width: '100%', height: 6, backgroundColor: '#1c1c3a', borderRadius: 3, justifyContent: 'center', position: 'relative' },
-  progressBarFill:  { height: '100%', borderRadius: 3, position: 'absolute' },
-  progressDot:      { width: 14, height: 14, borderRadius: 7, backgroundColor: '#ffffff', position: 'absolute', marginTop: -4, marginLeft: -7, elevation: 4 },
-  timeRow:          { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
-  timeText:         { color: '#8e8e93', fontSize: 12 },
+  sliderSection:   { width: '100%', marginBottom: 16, paddingHorizontal: 5 },
+  progressBarBg:   { width: '100%', height: 6, backgroundColor: '#1c1c3a', borderRadius: 3, justifyContent: 'center', position: 'relative' },
+  progressBarFill: { height: '100%', borderRadius: 3, position: 'absolute' },
+  progressDot:     { width: 14, height: 14, borderRadius: 7, backgroundColor: '#ffffff', position: 'absolute', marginTop: -4, marginLeft: -7, elevation: 4 },
+  timeRow:         { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
+  timeText:        { color: '#8e8e93', fontSize: 12 },
 
-  controlsContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 40, marginBottom: 20 },
-  largePlayBtn:      { width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center' },
+  controlsContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 22, marginBottom: 14 },
+  largePlayBtn:      { width: 78, height: 78, borderRadius: 39, justifyContent: 'center', alignItems: 'center' },
 
-  queueContainer: { borderTopWidth: 1, borderTopColor: '#1a1a30', paddingTop: 15 },
+  queueContainer: { borderTopWidth: 1, borderTopColor: '#1a1a30', paddingTop: 12, flex: 1 },
   queueHeader:    { fontSize: 12, fontWeight: 'bold', letterSpacing: 1, textTransform: 'uppercase' },
   queueItem:      { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
 });
