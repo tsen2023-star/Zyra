@@ -60,6 +60,9 @@ export default function App() {
   const [email, setEmail]             = useState('');
   const [username, setUsername]       = useState('');
   const [password, setPassword]       = useState('');
+  const [showPassword, setShowPassword]           = useState(false);
+  const [showNewPassword, setShowNewPassword]     = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [userToken, setUserToken]     = useState<string|null>(null);
   const [userId, setUserId]           = useState<string|null>(null);
   const [otpValue, setOtpValue]             = useState('');
@@ -253,9 +256,14 @@ export default function App() {
       finally { setIsAppReady(true); }
     };
     init();
+    // Keep Render server warm — ping every 4 minutes to prevent cold starts
+    const keepAlive = setInterval(() => {
+      fetch(`${BACKEND_URL}/ping`).catch(() => {});
+    }, 4 * 60 * 1000);
     // Load trending and top artists in background
     fetch(`${BACKEND_URL}/api/trending`).then(r => r.json()).then(j => { if (j.success) setTrendingSongs(j.songs || []); }).catch(() => {});
     fetch(`${BACKEND_URL}/api/artists/top`).then(r => r.json()).then(j => { if (j.success) setTopArtists(j.artists || []); }).catch(() => {});
+    return () => clearInterval(keepAlive);
   }, []);
 
   // ─── RNTP setup ──────────────────────────────────────────────────────────────
@@ -514,12 +522,19 @@ export default function App() {
   };
 
   // ─── Stream URL helper ────────────────────────────────────────────────────────
-  // ALWAYS use backend /api/stream — never use song.url directly (CDN URLs expire in minutes)
+  // ⚡ FAST PATH: if song has a fresh CDN url (from search results), pass it as a param
+  //    so backend does an instant 302 redirect without any extra API calls (~300ms)
+  // ⏳ SLOW PATH: no url param → backend fetches fresh URL from saavn.dev (~2-5s)
   const getStreamUrl = useCallback((song: any): string => {
     const dl = downloads.find((d: any) => d.id === song.id);
     if (dl?.localUri) return dl.localUri;
-    const te = encodeURIComponent(song.title  || '');
-    const ae = encodeURIComponent(song.artist || '');
+    const te  = encodeURIComponent(song.title  || '');
+    const ae  = encodeURIComponent(song.artist || '');
+    // Pass the CDN url if available so backend redirects instantly
+    if (song.url && typeof song.url === 'string' && song.url.includes('saavncdn')) {
+      const ue = encodeURIComponent(song.url);
+      return `${BACKEND_URL}/api/stream?id=${song.id}&title=${te}&artist=${ae}&url=${ue}`;
+    }
     return `${BACKEND_URL}/api/stream?id=${song.id}&title=${te}&artist=${ae}`;
   }, [downloads]);
 
@@ -908,7 +923,12 @@ export default function App() {
           {authMode === 'login' && (<>
             <Text style={styles.authSubtitle}>Sign in to continue</Text>
             <TextInput style={styles.authInput} placeholder="Email" placeholderTextColor="#666" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
-            <TextInput style={styles.authInput} placeholder="Password" placeholderTextColor="#666" secureTextEntry value={password} onChangeText={setPassword} />
+            <View style={styles.passwordRow}>
+              <TextInput style={[styles.authInput, { flex: 1, marginBottom: 0 }]} placeholder="Password" placeholderTextColor="#666" secureTextEntry={!showPassword} value={password} onChangeText={setPassword} />
+              <TouchableOpacity onPress={() => setShowPassword(v => !v)} style={styles.eyeBtn}>
+                <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={22} color="#8e8e93" />
+              </TouchableOpacity>
+            </View>
             <TouchableOpacity style={styles.authBtn} onPress={handleAuth} disabled={isLoading}>
               {isLoading ? <ActivityIndicator color="#050515" /> : <Text style={styles.authBtnText}>LOGIN</Text>}
             </TouchableOpacity>
@@ -924,7 +944,12 @@ export default function App() {
             <Text style={styles.authSubtitle}>Create your account</Text>
             <TextInput style={styles.authInput} placeholder="Username" placeholderTextColor="#666" value={username} onChangeText={setUsername} autoCapitalize="none" />
             <TextInput style={styles.authInput} placeholder="Email" placeholderTextColor="#666" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
-            <TextInput style={styles.authInput} placeholder="Password" placeholderTextColor="#666" secureTextEntry value={password} onChangeText={setPassword} />
+            <View style={styles.passwordRow}>
+              <TextInput style={[styles.authInput, { flex: 1, marginBottom: 0 }]} placeholder="Password" placeholderTextColor="#666" secureTextEntry={!showPassword} value={password} onChangeText={setPassword} />
+              <TouchableOpacity onPress={() => setShowPassword(v => !v)} style={styles.eyeBtn}>
+                <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={22} color="#8e8e93" />
+              </TouchableOpacity>
+            </View>
             <TouchableOpacity style={styles.authBtn} onPress={handleAuth} disabled={isLoading}>
               {isLoading ? <ActivityIndicator color="#050515" /> : <Text style={styles.authBtnText}>SIGN UP</Text>}
             </TouchableOpacity>
@@ -963,8 +988,18 @@ export default function App() {
 
           {authMode === 'reset_password' && (<>
             <Text style={styles.authSubtitle}>Create a new password</Text>
-            <TextInput style={styles.authInput} placeholder="New Password" placeholderTextColor="#666" secureTextEntry value={newPassword} onChangeText={setNewPassword} />
-            <TextInput style={styles.authInput} placeholder="Confirm Password" placeholderTextColor="#666" secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} />
+            <View style={styles.passwordRow}>
+              <TextInput style={[styles.authInput, { flex: 1, marginBottom: 0 }]} placeholder="New Password" placeholderTextColor="#666" secureTextEntry={!showNewPassword} value={newPassword} onChangeText={setNewPassword} />
+              <TouchableOpacity onPress={() => setShowNewPassword(v => !v)} style={styles.eyeBtn}>
+                <Ionicons name={showNewPassword ? 'eye-off' : 'eye'} size={22} color="#8e8e93" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.passwordRow}>
+              <TextInput style={[styles.authInput, { flex: 1, marginBottom: 0 }]} placeholder="Confirm Password" placeholderTextColor="#666" secureTextEntry={!showConfirmPassword} value={confirmPassword} onChangeText={setConfirmPassword} />
+              <TouchableOpacity onPress={() => setShowConfirmPassword(v => !v)} style={styles.eyeBtn}>
+                <Ionicons name={showConfirmPassword ? 'eye-off' : 'eye'} size={22} color="#8e8e93" />
+              </TouchableOpacity>
+            </View>
             <TouchableOpacity style={styles.authBtn} onPress={handleResetPassword} disabled={isLoading}>
               {isLoading ? <ActivityIndicator color="#050515" /> : <Text style={styles.authBtnText}>RESET PASSWORD</Text>}
             </TouchableOpacity>
@@ -1380,19 +1415,24 @@ export default function App() {
       {/* MINI PLAYER */}
       {activeTrack && (
         <TouchableOpacity style={[styles.miniPlayer, { backgroundColor: theme.miniPlayerBg, borderTopColor: moodColor + '44' }]} activeOpacity={0.9} onPress={() => setIsFullScreen(true)}>
+          {/* Left: artwork + title/artist — flex:1 so it never overlaps controls */}
           <View style={styles.miniPlayerLeft}>
-            {activeTrack.image ? (<Image source={{ uri: activeTrack.image }} style={{ width: 38, height: 38, borderRadius: 19, marginRight: 10 }} />) : (<Ionicons name="musical-note" size={20} color={moodColor} style={{ marginRight: 10 }} />)}
-            <View style={{ flex: 1 }}>
-              <Text numberOfLines={1} style={[styles.miniPlayerTitle, { flex: 1, color: theme.text }]}>{activeTrack.title}</Text>
-              <Text numberOfLines={1} style={[styles.miniPlayerArtist, { color: moodColor }]}>{activeTrack.artist}</Text>
+            {activeTrack.image
+              ? <Image source={{ uri: activeTrack.image }} style={{ width: 42, height: 42, borderRadius: 8, marginRight: 10, flexShrink: 0 }} />
+              : <View style={{ width: 42, height: 42, borderRadius: 8, backgroundColor: moodColor + '22', justifyContent: 'center', alignItems: 'center', marginRight: 10, flexShrink: 0 }}><Ionicons name="musical-note" size={20} color={moodColor} /></View>
+            }
+            <View style={{ flex: 1, overflow: 'hidden' }}>
+              <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.miniPlayerTitle, { color: theme.text }]}>{activeTrack.title}</Text>
+              <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.miniPlayerArtist, { color: moodColor }]}>{activeTrack.artist}</Text>
             </View>
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <TouchableOpacity onPress={playPrevious}><Ionicons name="play-skip-back" size={22} color={theme.text} /></TouchableOpacity>
+          {/* Right: controls — fixed width, no shrink */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <TouchableOpacity onPress={playPrevious} hitSlop={{ top:10,bottom:10,left:8,right:8 }}><Ionicons name="play-skip-back" size={22} color={theme.text} /></TouchableOpacity>
             <TouchableOpacity onPress={togglePlayPause} style={[styles.miniPlayerPlayBtn, { backgroundColor: moodColor }]}>
               {isLoading ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name={isPlaying ? 'pause' : 'play'} size={22} color="#050515" />}
             </TouchableOpacity>
-            <TouchableOpacity onPress={playNext}><Ionicons name="play-skip-forward" size={22} color={theme.text} /></TouchableOpacity>
+            <TouchableOpacity onPress={playNext} hitSlop={{ top:10,bottom:10,left:8,right:8 }}><Ionicons name="play-skip-forward" size={22} color={theme.text} /></TouchableOpacity>
           </View>
         </TouchableOpacity>
       )}
@@ -1754,11 +1794,13 @@ const styles = StyleSheet.create({
   statNumber: { color: '#00ffcc', fontSize: 22, fontWeight: 'bold' },
   statLabel:  { color: '#8e8e93', fontSize: 11, marginTop: 4 },
 
-  miniPlayer:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#0a1622', paddingHorizontal: 15, height: 70, borderTopWidth: 1 },
-  miniPlayerLeft:   { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  miniPlayerTitle:  { color: '#ffffff', fontSize: 14, fontWeight: 'bold' },
-  miniPlayerArtist: { fontSize: 12, marginTop: 2 },
+  miniPlayer:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#0a1622', paddingHorizontal: 14, height: 68, borderTopWidth: 1 },
+  miniPlayerLeft:   { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 10, overflow: 'hidden' },
+  miniPlayerTitle:  { color: '#ffffff', fontSize: 14, fontWeight: 'bold', marginBottom: 2 },
+  miniPlayerArtist: { fontSize: 12 },
   miniPlayerPlayBtn:{ width: 38, height: 38, borderRadius: 19, justifyContent: 'center', alignItems: 'center' },
+  passwordRow:      { flexDirection: 'row', alignItems: 'center', width: '100%', backgroundColor: '#121225', borderRadius: 10, marginBottom: 15, paddingRight: 12 },
+  eyeBtn:           { padding: 6, justifyContent: 'center', alignItems: 'center' },
 
   bottomNav: { flexDirection: 'row', backgroundColor: '#050515', height: 75, borderTopWidth: 1, borderTopColor: '#121225', paddingBottom: 15, justifyContent: 'space-around', alignItems: 'center' },
   navButton: { alignItems: 'center', justifyContent: 'center', flex: 1 },
