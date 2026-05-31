@@ -514,12 +514,10 @@ export default function App() {
   };
 
   // ─── Stream URL helper ────────────────────────────────────────────────────────
+  // ALWAYS use backend /api/stream — never use song.url directly (CDN URLs expire in minutes)
   const getStreamUrl = useCallback((song: any): string => {
     const dl = downloads.find((d: any) => d.id === song.id);
     if (dl?.localUri) return dl.localUri;
-    // Use direct CDN URL if present in search results (eliminates stream-resolve delay)
-    if (song.url && typeof song.url === 'string' && song.url.startsWith('http')) return song.url;
-    // Backend proxy — also now redirects to CDN for JioSaavn
     const te = encodeURIComponent(song.title  || '');
     const ae = encodeURIComponent(song.artist || '');
     return `${BACKEND_URL}/api/stream?id=${song.id}&title=${te}&artist=${ae}`;
@@ -569,19 +567,39 @@ export default function App() {
     finally { setArtistLoading(false); }
   };
 
+  // ─── Remove from recently played ─────────────────────────────────────────────
+  const removeFromHistory = async (song: any) => {
+    // Optimistic update immediately
+    setRecentlyPlayed(prev => prev.filter(s => s.id !== song.id));
+    try {
+      await apiCall(`/api/user/history/${song.id}`, 'DELETE');
+    } catch (e) {
+      // Rollback on failure
+      loadRecentlyPlayed();
+    }
+  };
+
   // ─── Play track ───────────────────────────────────────────────────────────────
   async function handleTrackPress(track: any) {
-    try {
-      setIsLoading(true);
-      setIsYoutubeFallback(track.id?.startsWith('yt_') || false);
-      setActiveTrack(track);
-      setShowLyrics(false); setLyrics('');
-      if (searchQuery.trim()) saveSearchHistory(searchQuery.trim());
+    setIsLoading(true);
+    setIsYoutubeFallback(track.id?.startsWith('yt_') || false);
+    setActiveTrack(track);
+    setShowLyrics(false); setLyrics('');
+    if (searchQuery.trim()) saveSearchHistory(searchQuery.trim());
 
+    const streamUrl = getStreamUrl(track);
+
+    try {
       await TrackPlayer.reset();
       trackMetaRef.current.clear();
       trackMetaRef.current.set(String(track.id), track);
-      await TrackPlayer.add({ id: String(track.id), url: getStreamUrl(track), title: track.title || '', artist: track.artist || '', artwork: track.image || '' });
+      await TrackPlayer.add({
+        id:      String(track.id),
+        url:     streamUrl,
+        title:   track.title  || '',
+        artist:  track.artist || '',
+        artwork: track.image  || '',
+      });
       await TrackPlayer.play();
       setIsLoading(false);
 
@@ -606,9 +624,26 @@ export default function App() {
         loadRecentlyPlayed();
       }
     } catch (e: any) {
-      console.error('Playback error:', e);
-      showAlert('Song Unavailable', 'Could not play this song. Please try another.');
-      setIsLoading(false);
+      // First failure — try resetting TrackPlayer state and retry once
+      console.warn('Playback error (retrying):', e);
+      try {
+        await TrackPlayer.reset();
+        trackMetaRef.current.clear();
+        trackMetaRef.current.set(String(track.id), track);
+        await TrackPlayer.add({
+          id:      String(track.id),
+          url:     streamUrl,
+          title:   track.title  || '',
+          artist:  track.artist || '',
+          artwork: track.image  || '',
+        });
+        await TrackPlayer.play();
+        setIsLoading(false);
+      } catch (e2: any) {
+        console.error('Playback retry failed:', e2);
+        showAlert('Song Unavailable', 'Could not play this song. Please try another.');
+        setIsLoading(false);
+      }
     }
   }
 
@@ -1037,10 +1072,23 @@ export default function App() {
                 {/* Recently Played */}
                 {recentlyPlayed.length > 0 && (
                   <>
-                    <Text style={[styles.sectionHeader, { color: theme.subtext }]}>Recently Played</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                      <Text style={[styles.sectionHeader, { color: theme.subtext, marginBottom: 0 }]}>Recently Played</Text>
+                      <Text style={{ color: '#ff444488', fontSize: 11 }}>Hold to remove</Text>
+                    </View>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
                       {recentlyPlayed.map((song, i) => (
-                        <TouchableOpacity key={i} style={styles.recentCard} onPress={() => handleTrackPress(song)}>
+                        <TouchableOpacity
+                          key={i}
+                          style={styles.recentCard}
+                          onPress={() => handleTrackPress(song)}
+                          onLongPress={() =>
+                            showAlert('Remove Song', `Remove "${song.title}" from recently played?`, [
+                              { text: 'Cancel', style: 'cancel' },
+                              { text: 'Remove', style: 'destructive', onPress: () => removeFromHistory(song) },
+                            ])
+                          }
+                        >
                           <View style={{ width: 68, height: 68, borderRadius: 14, overflow: 'hidden', backgroundColor: theme.surface, marginBottom: 8, borderWidth: activeTrack?.id === song.id ? 2 : 0, borderColor: moodColor }}>
                             {song.image ? <Image source={{ uri: song.image }} style={{ width: 68, height: 68 }} /> : <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><Ionicons name="musical-note" size={24} color={moodColor} /></View>}
                           </View>
