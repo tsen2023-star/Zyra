@@ -172,6 +172,7 @@ export default function App() {
   const handleAutoNextRef  = useRef<any>(null);
   const handleShakeNextRef = useRef<any>(null);
   const trackMetaRef       = useRef<Map<string, any>>(new Map());
+  const urlCacheRef        = useRef<Map<string, string>>(new Map()); // pre-fetched audio URLs
   const queueCtxRef = useRef({
     activeTrack: null as any,
     userId:      null as string | null,
@@ -483,12 +484,39 @@ export default function App() {
   };
 
   // ─── Search ──────────────────────────────────────────────────────────────────
+  // Silently pre-fetch audio URLs for all search results in background
+  // so by the time user taps a song, the URL is already cached (instant playback)
+  const prefetchAudioUrls = (songs: any[]) => {
+    songs.forEach(song => {
+      if (!song?.id || song.id.startsWith('yt_')) return;
+      if (urlCacheRef.current.has(song.id)) return; // already cached
+      // Fire-and-forget: don't await, don't block UI
+      (async () => {
+        try {
+          const res  = await fetch(`https://saavn.dev/api/songs/${song.id}`, { signal: AbortSignal.timeout(8000) });
+          const json = await res.json();
+          const urls: any[] = json?.data?.[0]?.downloadUrl || [];
+          const best = urls.find((u: any) => u.quality === '320kbps')
+                    || urls.find((u: any) => u.quality === '160kbps')
+                    || urls[urls.length - 1];
+          if (best?.url) urlCacheRef.current.set(song.id, best.url);
+        } catch {}
+      })();
+    });
+  };
+
   const fetchLiveTracks = async (query: string) => {
     try {
       setIsSearching(true);
       const resp = await fetch(`${BACKEND_URL}/api/search?query=${encodeURIComponent(query)}`);
       const json = await resp.json();
-      if (json.success) { setSongsList(json.data.results || []); setAlbumResults(json.data.albums || []); }
+      if (json.success) {
+        const results = json.data.results || [];
+        setSongsList(results);
+        setAlbumResults(json.data.albums || []);
+        // Pre-fetch audio URLs in background as soon as results appear
+        prefetchAudioUrls(results);
+      }
       else { setSongsList([]); setAlbumResults([]); }
     } catch (e) { setSongsList([]); setAlbumResults([]); }
     finally { setIsSearching(false); }
@@ -521,30 +549,35 @@ export default function App() {
     } catch {}
   };
 
-  // ─── Stream URL resolver (ASYNC — bypasses Render entirely for JioSaavn) ───────
-  // Priority order:
+  // ─── Stream URL resolver ────────────────────────────────────────────────────────
+  // Priority:
   //  1. Local download (instant)
-  //  2. Fresh CDN url already in song object from search (instant, direct)
-  //  3. Fetch fresh URL directly from saavn.dev API in-app (~300-800ms, NO Render)
-  //  4. Render backend only for YouTube songs (needs yt-dlp)
+  //  2. Pre-fetched cache hit (INSTANT — background prefetch already ran)
+  //  3. Fresh CDN url from song object (instant)
+  //  4. Fetch from saavn.dev directly (no Render, ~500ms)
+  //  5. Render backend fallback (YouTube only)
   const resolveStreamUrl = useCallback(async (song: any): Promise<string> => {
     // 1. Local download
     const dl = downloads.find((d: any) => d.id === song.id);
     if (dl?.localUri) return dl.localUri;
 
-    // 2. YouTube → must use backend (needs yt-dlp server-side)
+    // 2. YouTube → backend only
     if (song.id?.startsWith('yt_')) {
       const te = encodeURIComponent(song.title  || '');
       const ae = encodeURIComponent(song.artist || '');
       return `${BACKEND_URL}/api/stream?id=${song.id}&title=${te}&artist=${ae}`;
     }
 
-    // 3. Fresh CDN url from search results → use directly, no backend at all!
+    // 3. ⚡ Cache hit — URL already pre-fetched in background (INSTANT)
+    const cached = urlCacheRef.current.get(song.id);
+    if (cached) return cached;
+
+    // 4. Fresh CDN url from song object (from search results)
     if (song.url && typeof song.url === 'string' && song.url.includes('saavncdn')) {
       return song.url;
     }
 
-    // 4. No URL saved → fetch fresh from saavn.dev directly in-app (no Render cold start)
+    // 5. Fetch fresh from saavn.dev directly (no Render cold start)
     try {
       const res  = await fetch(`https://saavn.dev/api/songs/${song.id}`, { signal: AbortSignal.timeout(6000) });
       const json = await res.json();
@@ -552,17 +585,19 @@ export default function App() {
       const best = urls.find((u: any) => u.quality === '320kbps')
                 || urls.find((u: any) => u.quality === '160kbps')
                 || urls[urls.length - 1];
-      if (best?.url) return best.url;
+      if (best?.url) {
+        urlCacheRef.current.set(song.id, best.url); // cache for future use
+        return best.url;
+      }
     } catch (e) {
-      console.warn('saavn.dev direct fetch failed, falling back to backend:', e);
+      console.warn('saavn.dev direct fetch failed, using backend fallback:', e);
     }
 
-    // 5. Final fallback: Render backend
+    // 6. Final fallback: Render backend
     const te = encodeURIComponent(song.title  || '');
     const ae = encodeURIComponent(song.artist || '');
     return `${BACKEND_URL}/api/stream?id=${song.id}&title=${te}&artist=${ae}`;
   }, [downloads]);
-
   // ─── Add songs to RNTP queue ──────────────────────────────────────────────────
   const addSongsToQueue = useCallback(async (songs: any[], limitN = 5) => {
     let added = 0;
