@@ -521,20 +521,45 @@ export default function App() {
     } catch {}
   };
 
-  // ─── Stream URL helper ────────────────────────────────────────────────────────
-  // ⚡ FAST PATH: if song has a fresh CDN url (from search results), pass it as a param
-  //    so backend does an instant 302 redirect without any extra API calls (~300ms)
-  // ⏳ SLOW PATH: no url param → backend fetches fresh URL from saavn.dev (~2-5s)
-  const getStreamUrl = useCallback((song: any): string => {
+  // ─── Stream URL resolver (ASYNC — bypasses Render entirely for JioSaavn) ───────
+  // Priority order:
+  //  1. Local download (instant)
+  //  2. Fresh CDN url already in song object from search (instant, direct)
+  //  3. Fetch fresh URL directly from saavn.dev API in-app (~300-800ms, NO Render)
+  //  4. Render backend only for YouTube songs (needs yt-dlp)
+  const resolveStreamUrl = useCallback(async (song: any): Promise<string> => {
+    // 1. Local download
     const dl = downloads.find((d: any) => d.id === song.id);
     if (dl?.localUri) return dl.localUri;
-    const te  = encodeURIComponent(song.title  || '');
-    const ae  = encodeURIComponent(song.artist || '');
-    // Pass the CDN url if available so backend redirects instantly
-    if (song.url && typeof song.url === 'string' && song.url.includes('saavncdn')) {
-      const ue = encodeURIComponent(song.url);
-      return `${BACKEND_URL}/api/stream?id=${song.id}&title=${te}&artist=${ae}&url=${ue}`;
+
+    // 2. YouTube → must use backend (needs yt-dlp server-side)
+    if (song.id?.startsWith('yt_')) {
+      const te = encodeURIComponent(song.title  || '');
+      const ae = encodeURIComponent(song.artist || '');
+      return `${BACKEND_URL}/api/stream?id=${song.id}&title=${te}&artist=${ae}`;
     }
+
+    // 3. Fresh CDN url from search results → use directly, no backend at all!
+    if (song.url && typeof song.url === 'string' && song.url.includes('saavncdn')) {
+      return song.url;
+    }
+
+    // 4. No URL saved → fetch fresh from saavn.dev directly in-app (no Render cold start)
+    try {
+      const res  = await fetch(`https://saavn.dev/api/songs/${song.id}`, { signal: AbortSignal.timeout(6000) });
+      const json = await res.json();
+      const urls: any[] = json?.data?.[0]?.downloadUrl || [];
+      const best = urls.find((u: any) => u.quality === '320kbps')
+                || urls.find((u: any) => u.quality === '160kbps')
+                || urls[urls.length - 1];
+      if (best?.url) return best.url;
+    } catch (e) {
+      console.warn('saavn.dev direct fetch failed, falling back to backend:', e);
+    }
+
+    // 5. Final fallback: Render backend
+    const te = encodeURIComponent(song.title  || '');
+    const ae = encodeURIComponent(song.artist || '');
     return `${BACKEND_URL}/api/stream?id=${song.id}&title=${te}&artist=${ae}`;
   }, [downloads]);
 
@@ -547,11 +572,12 @@ export default function App() {
       if (trackMetaRef.current.get(String(song.id))) continue;
       trackMetaRef.current.set(String(song.id), song);
       try {
-        await TrackPlayer.add({ id: String(song.id), url: getStreamUrl(song), title: song.title || '', artist: song.artist || '', artwork: song.image || '' });
+        const url = await resolveStreamUrl(song);
+        await TrackPlayer.add({ id: String(song.id), url, title: song.title || '', artist: song.artist || '', artwork: song.image || '' });
         added++;
       } catch {}
     }
-  }, [getStreamUrl]);
+  }, [resolveStreamUrl]);
 
   // ─── Pre-fill queue ───────────────────────────────────────────────────────────
   const prefillQueue = useCallback(async () => {
@@ -602,9 +628,10 @@ export default function App() {
     setShowLyrics(false); setLyrics('');
     if (searchQuery.trim()) saveSearchHistory(searchQuery.trim());
 
-    const streamUrl = getStreamUrl(track);
-
     try {
+      // Resolve the stream URL FIRST (directly from saavn.dev, no Render cold start)
+      const streamUrl = await resolveStreamUrl(track);
+
       await TrackPlayer.reset();
       trackMetaRef.current.clear();
       trackMetaRef.current.set(String(track.id), track);
@@ -626,7 +653,7 @@ export default function App() {
         if (nextSongs.length > 0) addSongsToQueue(nextSongs, 5);
       }
 
-      // Post history + detect mood
+      // Post history + detect mood (background, non-blocking)
       if (userToken) {
         apiCall('/api/user/history', 'POST', { id: track.id, title: track.title, artist: track.artist, image: track.image })
           .then(json => {
@@ -639,25 +666,9 @@ export default function App() {
         loadRecentlyPlayed();
       }
     } catch (e: any) {
-      // First failure — try resetting TrackPlayer state and retry once
-      console.warn('Playback error (retrying):', e);
-      try {
-        await TrackPlayer.reset();
-        trackMetaRef.current.clear();
-        trackMetaRef.current.set(String(track.id), track);
-        await TrackPlayer.add({
-          id:      String(track.id),
-          url:     streamUrl,
-          title:   track.title  || '',
-          artist:  track.artist || '',
-          artwork: track.image  || '',
-        });
-        await TrackPlayer.play();
-        setIsLoading(false);
-      } catch (e2: any) {
-        console.error('Playback retry failed:', e2);
-        showAlert('Song Unavailable', 'Could not play this song. Please try another.');
-        setIsLoading(false);
+      console.error('Playback failed:', e);
+      showAlert('Song Unavailable', 'Could not play this song. Please try another.');
+      setIsLoading(false);
       }
     }
   }
