@@ -669,7 +669,6 @@ export default function App() {
       console.error('Playback failed:', e);
       showAlert('Song Unavailable', 'Could not play this song. Please try another.');
       setIsLoading(false);
-      }
     }
   }
 
@@ -760,7 +759,8 @@ export default function App() {
     if (trackMetaRef.current.get(String(song.id))) { showAlert('Already in Queue', 'This song is already in the up next queue.'); return; }
     trackMetaRef.current.set(String(song.id), song);
     try {
-      await TrackPlayer.add({ id: String(song.id), url: getStreamUrl(song), title: song.title || '', artist: song.artist || '', artwork: song.image || '' });
+      const url = await resolveStreamUrl(song);
+      await TrackPlayer.add({ id: String(song.id), url, title: song.title || '', artist: song.artist || '', artwork: song.image || '' });
       showAlert('Added to Queue', `"${song.title}" added to up next.`);
     } catch { showAlert('Error', 'Could not add to queue.'); }
   };
