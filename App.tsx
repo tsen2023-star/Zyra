@@ -754,7 +754,7 @@ export default function App() {
     try {
       const resp = await fetch(`${BACKEND_URL}/api/user/history`, { headers: { Authorization: `Bearer ${t}` } });
       const json = await resp.json();
-      if (json.success) setRecentlyPlayed((json.data?.history || []).slice(0, 10));
+      if (json.success) setRecentlyPlayed(json.data?.history || []);
     } catch {}
   };
 
