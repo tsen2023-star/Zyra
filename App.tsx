@@ -11,10 +11,9 @@ import TrackPlayer, {
   usePlaybackState, useProgress, useTrackPlayerEvents, RepeatMode,
 } from 'react-native-track-player';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import { Accelerometer } from 'expo-sensors';
-import { LinearGradient } from 'expo-linear-gradient';
-import ImageColors from 'react-native-image-colors';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const BACKEND_URL = 'https://zyra-backend-9nvt.onrender.com';
@@ -225,20 +224,6 @@ export default function App() {
   // ── [NEW] Skip Intro ──
   const [skipIntroEnabled, setSkipIntroEnabled] = useState(false);
   const [introSeconds,     setIntroSeconds]     = useState(15);
-  const [extractedColor,   setExtractedColor]   = useState<string | null>(null);
-
-  useEffect(() => {
-    if (activeTrack?.image) {
-      ImageColors.getColors(activeTrack.image, { fallback: '#00ffcc', cache: true })
-        .then((colors: any) => {
-          if (colors.platform === 'android') setExtractedColor(colors.dominant || null);
-          else if (colors.platform === 'ios') setExtractedColor(colors.primary || null);
-          else setExtractedColor(null);
-        }).catch(() => setExtractedColor(null));
-    } else {
-      setExtractedColor(null);
-    }
-  }, [activeTrack?.image]);
 
   // ── [NEW] Bookmarks (per trackId → array of seconds) ──
   const [bookmarks, setBookmarks] = useState<Record<string,number[]>>({});
@@ -2872,11 +2857,18 @@ export default function App() {
 
       {/* ── FULL SCREEN PLAYER ─────────────────────────────────────────────── */}
       <Modal animationType="slide" transparent={false} visible={isFullScreen} onRequestClose={() => setIsFullScreen(false)}>
-        <View style={[styles.fullScreenContainer, { backgroundColor: isAmoled ? '#000000' : '#0d0d14', overflow: 'hidden' }]}>
-          {/* ── Dominant colour bleeds from top, fades to black at bottom ── */}
+        <View style={[styles.fullScreenContainer, { backgroundColor: '#000000', overflow: 'hidden' }]}>
+          {/* ── Dominant colour bleeds from top, fades to black at bottom using a massive Blur effect ── */}
+          {activeTrack?.image && (
+            <Image
+              source={{ uri: activeTrack.image }}
+              style={{ position: 'absolute', width: '200%', height: '80%', top: '-10%', left: '-50%', opacity: 0.55 }}
+              blurRadius={90}
+            />
+          )}
           <LinearGradient
-            colors={[extractedColor || moodColor, '#000000', '#000000']}
-            locations={[0, 0.5, 1]}
+            colors={['rgba(0,0,0,0.25)', '#000000', '#000000']}
+            locations={[0, 0.45, 1]}
             style={{ position: 'absolute', width: '100%', height: '100%' }}
           />
           {/* Header */}
