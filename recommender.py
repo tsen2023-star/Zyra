@@ -23,7 +23,7 @@ MOOD_KEYWORDS = {
         "kamli", "halkat", "laila", "jumme"
     ],
     "90s": [
-        "kumar sanu", "udit narayan", "alka yagnik", "asha bhosle",
+        "kumar sanu", "udit narayan", "shreya ghoshal", "asha bhosle",
         "lata mangeshkar", "sonu nigam 90", "90s", "retro", "purana",
         "classic", "hum aapke", "dilwale dulhania", "baazigar", "kuch kuch"
     ],
@@ -67,7 +67,7 @@ MOOD_QUERIES = {
         "kumar sanu best songs",
         "udit narayan hit songs",
         "retro bollywood classics",
-        "alka yagnik hit songs",
+        "shreya ghoshal hit songs",
     ],
     "bhajan": [
         "top bhajans 2024",
