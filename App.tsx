@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity,
   Switch, StatusBar, ActivityIndicator, Modal, KeyboardAvoidingView,
@@ -14,10 +14,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import { Accelerometer } from 'expo-sensors';
 import { LinearGradient } from 'expo-linear-gradient';
+import ImageColors from 'react-native-image-colors';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const BACKEND_URL = 'https://zyra-backend-9nvt.onrender.com';
 
-// â”€â”€â”€ Mood Colours â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Mood Colours ─────────────────────────────────────────────────────────────
 const MOOD_COLORS: Record<string, string> = {
   romantic:  '#d41051',
   sad:       '#502db0',
@@ -30,7 +32,7 @@ const MOOD_COLORS: Record<string, string> = {
 
 const SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 
-// â”€â”€â”€ ZyraAlert â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── ZyraAlert ────────────────────────────────────────────────────────────────
 interface AlertButton { text: string; onPress?: () => void; style?: 'cancel' | 'destructive' | 'default'; }
 interface ZyraAlertProps { visible: boolean; title: string; message: string; buttons: AlertButton[]; onDismiss: () => void; }
 function ZyraAlert({ visible, title, message, buttons, onDismiss }: ZyraAlertProps) {
@@ -58,7 +60,7 @@ function ZyraAlert({ visible, title, message, buttons, onDismiss }: ZyraAlertPro
 export default function App() {
   const [isAppReady, setIsAppReady] = useState(false);
 
-  // â”€â”€ Auth â”€â”€
+  // ── Auth ──
   const [isLoggedIn, setIsLoggedIn]   = useState(false);
   const [authMode, setAuthMode]       = useState<'login'|'signup'|'forgot'|'verify_otp'|'reset_password'>('login');
   const [email, setEmail]             = useState('');
@@ -74,23 +76,23 @@ export default function App() {
   const [newPassword, setNewPassword]       = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  // â”€â”€ Navigation â”€â”€
+  // ── Navigation ──
   const [currentScreen, setCurrentScreen] = useState('all_songs');
 
-  // â”€â”€ User data â”€â”€
+  // ── User data ──
   const [favorites,  setFavorites]  = useState<any[]>([]);
   const [downloads,  setDownloads]  = useState<any[]>([]);
   const [playlists,  setPlaylists]  = useState<{id:string,name:string,songs:any[]}[]>([]);
   const [activePlaylistId, setActivePlaylistId] = useState<string|null>(null);
 
-  // â”€â”€ Player â”€â”€
+  // ── Player ──
   const [isFullScreen, setIsFullScreen]     = useState(false);
   const [activeTrack,  setActiveTrack]      = useState<any>(null);
   const [isLoading,    setIsLoading]        = useState(false);
   const [isYoutubeFallback, setIsYoutubeFallback] = useState(false);
   const progressBarWidthRef = useRef<number>(0);
 
-  // â”€â”€ RNTP hooks (must be at top level) â”€â”€
+  // ── RNTP hooks (must be at top level) ──
   const playerState = usePlaybackState();
   const isPlaying   = playerState.state === State.Playing;
   // Show spinner when RNTP is buffering OR loading
@@ -99,16 +101,16 @@ export default function App() {
   const position = posRaw  * 1000;
   const duration = durRaw  * 1000;
 
-  // â”€â”€ Repeat & Shuffle â”€â”€
+  // ── Repeat & Shuffle ──
   const [repeatMode, setRepeatMode] = useState<'off'|'all'|'one'>('off');
   const [isShuffled, setIsShuffled] = useState(false);
 
-  // â”€â”€ Sleep Timer â”€â”€
+  // ── Sleep Timer ──
   const [sleepTimer,    setSleepTimer]    = useState<number>(0);
   const [sleepTimerEnd, setSleepTimerEnd] = useState<number>(0);
   const sleepTimerRef = useRef<any>(null);
 
-  // â”€â”€ Lyrics â”€â”€
+  // ── Lyrics ──
   const [lyrics,           setLyrics]           = useState<string>('');
   const [lyricsLoading,    setLyricsLoading]    = useState(false);
   const [showLyrics,       setShowLyrics]       = useState(false);
@@ -117,58 +119,58 @@ export default function App() {
   const [currentLyricIndex,setCurrentLyricIndex]= useState(-1);
   const lyricsScrollRef = useRef<ScrollView>(null);
 
-  // â”€â”€ Crossfade â”€â”€
+  // ── Crossfade ──
   const [crossfadeEnabled, setCrossfadeEnabled] = useState(false);
 
-  // â”€â”€ Equalizer â”€â”€
+  // ── Equalizer ──
   const [showEqualizerModal, setShowEqualizerModal] = useState(false);
   const [eqBass,   setEqBass]   = useState(0.5);
   const [eqMid,    setEqMid]    = useState(0.5);
   const [eqTreble, setEqTreble] = useState(0.5);
 
-  // â”€â”€ Recently Played â”€â”€
+  // ── Recently Played ──
   const [recentlyPlayed, setRecentlyPlayed] = useState<any[]>([]);
 
-  // â”€â”€ Trending â”€â”€
+  // ── Trending ──
   const [trendingSongs, setTrendingSongs] = useState<any[]>([]);
 
-  // â”€â”€ Custom Alert â”€â”€
+  // ── Custom Alert ──
   const [alertVisible,  setAlertVisible]  = useState(false);
   const [alertTitle,    setAlertTitle]    = useState('');
   const [alertMessage,  setAlertMessage]  = useState('');
   const [alertButtons,  setAlertButtons]  = useState<AlertButton[]>([{ text: 'OK' }]);
 
-  // â”€â”€ Long-press Context Menu â”€â”€
+  // ── Long-press Context Menu ──
   const [contextMenuVisible, setContextMenuVisible] = useState(false);
   const [contextMenuSong,    setContextMenuSong]    = useState<any>(null);
 
-  // â”€â”€ Search â”€â”€
+  // ── Search ──
   const [searchQuery,    setSearchQuery]    = useState('');
   const [songsList,      setSongsList]      = useState<any[]>([]);
   const [isSearching,    setIsSearching]    = useState(false);
   const [searchHistory,  setSearchHistory]  = useState<string[]>([]);
   const [isSearchFocused,setIsSearchFocused]= useState(false);
 
-  // â”€â”€ Smart Autoplay â”€â”€
+  // ── Smart Autoplay ──
   const [smartAutoplay,  setSmartAutoplay]  = useState(true);
   const [currentMood,    setCurrentMood]    = useState<string>('default');
   const [autoplayReason, setAutoplayReason] = useState<string>('');
   const [autoplayQueue,  setAutoplayQueue]  = useState<any[]>([]);
   const [shakeEnabled,   setShakeEnabled]   = useState(false);
 
-  // â”€â”€ Album / Movie â”€â”€
+  // ── Album / Movie ──
   const [albumResults,    setAlbumResults]    = useState<any[]>([]);
   const [expandedAlbumId, setExpandedAlbumId] = useState<string|null>(null);
   const [searchFilter,    setSearchFilter]    = useState<'all'|'songs'|'albums'|'artists'|'movies'>('all');
   const [artistResults,   setArtistResults]   = useState<any[]>([]);
   const [showMoodGenres,  setShowMoodGenres]  = useState(false);
-  // â”€â”€ Movie search â”€â”€
+  // ── Movie search ──
   const [movieResults,        setMovieResults]        = useState<any[]>([]);
   const [selectedMovie,       setSelectedMovie]       = useState<any>(null);
   const [movieSongs,          setMovieSongs]          = useState<any[]>([]);
   const [isMovieSongsLoading, setIsMovieSongsLoading] = useState(false);
 
-  // â”€â”€ Artists â”€â”€
+  // ── Artists ──
   const [topArtists,    setTopArtists]    = useState<any[]>([]);
   const [activeArtist,  setActiveArtist]  = useState<any>(null);
   const [artistTracks,  setArtistTracks]  = useState<any[]>([]);
@@ -176,14 +178,14 @@ export default function App() {
   const [isArtistMode,  setIsArtistMode]  = useState(false);
   const artistPlayedRef = useRef<Set<string>>(new Set());
 
-  // â”€â”€ Theme â”€â”€
+  // ── Theme ──
   type ThemeMode = 'dark'|'amoled'|'light'|'midnight'|'forest'|'sunset'|'purple'|'ocean'|'rose'|'golden';
   const [themeMode, setThemeMode] = useState<ThemeMode>('dark');
-  // â”€â”€ [VISUAL] Smooth theme transition â”€â”€
+  // ── [VISUAL] Smooth theme transition ──
   const themeTransAnim = useRef(new Animated.Value(1)).current;
 
   const switchTheme = useCallback((m: ThemeMode) => {
-    // Fade out â†’ swap â†’ fade in
+    // Fade out → swap → fade in
     Animated.timing(themeTransAnim, {
       toValue: 0,
       duration: 160,
@@ -201,42 +203,60 @@ export default function App() {
     });
   }, []);
 
-  // â”€â”€ Modals â”€â”€
+  // ── Modals ──
   const [isPlaylistModalVisible, setPlaylistModalVisible] = useState(false);
   const [playlistSongTarget,     setPlaylistSongTarget]   = useState<any>(null);
   const [newPlaylistName,        setNewPlaylistName]      = useState('');
   const [isMenuVisible,          setMenuVisible]          = useState(false);
 
-  // â”€â”€ [NEW] Playback Speed â”€â”€
+  // ── [NEW] Playback Speed ──
   const [playbackSpeed,   setPlaybackSpeedState] = useState(1.0);
   const [showSpeedPicker, setShowSpeedPicker]    = useState(false);
 
-  // â”€â”€ [NEW] Audio Quality â”€â”€
+  // ── [NEW] Audio Quality ──
   const [audioQuality, setAudioQuality] = useState<'320kbps'|'160kbps'|'96kbps'>('320kbps');
 
-  // â”€â”€ [NEW] Song Rating â”€â”€
+  // ── [NEW] Song Rating ──
   const [ratedSongs, setRatedSongs] = useState<Record<string,'like'|'dislike'>>({});
 
-  // â”€â”€ [NEW] Listen Later â”€â”€
+  // ── [NEW] Listen Later ──
   const [listenLater, setListenLater] = useState<any[]>([]);
 
-  // â”€â”€ [NEW] Bookmarks (per trackId â†’ array of seconds) â”€â”€
+  // ── [NEW] Skip Intro ──
+  const [skipIntroEnabled, setSkipIntroEnabled] = useState(false);
+  const [introSeconds,     setIntroSeconds]     = useState(15);
+  const [extractedColor,   setExtractedColor]   = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeTrack?.image) {
+      ImageColors.getColors(activeTrack.image, { fallback: '#00ffcc', cache: true })
+        .then((colors: any) => {
+          if (colors.platform === 'android') setExtractedColor(colors.dominant || null);
+          else if (colors.platform === 'ios') setExtractedColor(colors.primary || null);
+          else setExtractedColor(null);
+        }).catch(() => setExtractedColor(null));
+    } else {
+      setExtractedColor(null);
+    }
+  }, [activeTrack?.image]);
+
+  // ── [NEW] Bookmarks (per trackId → array of seconds) ──
   const [bookmarks, setBookmarks] = useState<Record<string,number[]>>({});
 
-  // â”€â”€ [NEW] Related Songs â”€â”€
+  // ── [NEW] Related Songs ──
   const [relatedSongs,   setRelatedSongs]   = useState<any[]>([]);
   const [relatedLoading, setRelatedLoading] = useState(false);
   const [playerTab, setPlayerTab] = useState<'queue'|'lyrics'|'related'>('queue');
 
-  // â”€â”€ [NEW] Skip Intro â”€â”€
+  // ── [NEW] Skip Intro ──
   const [skipIntroEnabled, setSkipIntroEnabled] = useState(false);
   const [introSeconds,     setIntroSeconds]     = useState(15);
 
-  // â”€â”€ [NEW] Seek Indicator (swipe gesture feedback) â”€â”€
+  // ── [NEW] Seek Indicator (swipe gesture feedback) ──
   const [seekIndicator, setSeekIndicator] = useState('');
   const seekIndicatorTimeoutRef = useRef<any>(null);
 
-  // â”€â”€ Refs â”€â”€
+  // ── Refs ──
   const typingTimeoutRef   = useRef<any>(null);
   const playNextRef        = useRef<any>(null);
   const handleAutoNextRef  = useRef<any>(null);
@@ -254,27 +274,27 @@ export default function App() {
   const fullScreenRef   = useRef(false);
   const searchQueryRef  = useRef('');
   const searchFocusRef  = useRef(false);
-  // For PanResponder â€” live references to avoid stale closures
+  // For PanResponder — live references to avoid stale closures
   const posRef = useRef(0);
   const durRef = useRef(0);
   const swipeStartPosRef = useRef(0);
 
-  // â”€â”€ Animations â”€â”€
+  // ── Animations ──
   const ring1 = useRef(new Animated.Value(0)).current;
   const ring2 = useRef(new Animated.Value(0)).current;
   const ring3 = useRef(new Animated.Value(0)).current;
-  // â”€â”€ [VISUAL] Vinyl rotation â”€â”€
+  // ── [VISUAL] Vinyl rotation ──
   const vinylRotation = useRef(new Animated.Value(0)).current;
-  // â”€â”€ [VISUAL] 4-bar EQ animator â”€â”€
+  // ── [VISUAL] 4-bar EQ animator ──
   const eqBar1 = useRef(new Animated.Value(3)).current;
   const eqBar2 = useRef(new Animated.Value(3)).current;
   const eqBar3 = useRef(new Animated.Value(3)).current;
   const eqBar4 = useRef(new Animated.Value(3)).current;
-  // â”€â”€ [VISUAL] Nav pill position â”€â”€
+  // ── [VISUAL] Nav pill position ──
   const navPillAnim = useRef(new Animated.Value(0)).current;
   const navBarWidthRef = useRef(0);
 
-  // â”€â”€â”€ Nav pill â€” animate when screen changes (pixel-based, no stale closure) â”€â”€
+  // ─── Nav pill — animate when screen changes (pixel-based, no stale closure) ──
   const navScreenToIdx = useCallback((screen: string) => {
     if (screen === 'library' || screen === 'playlist_view' || screen === 'listen_later') return 1;
     if (screen === 'downloads') return 2;
@@ -294,7 +314,7 @@ export default function App() {
     }
   }, [currentScreen]);
 
-  // â”€â”€â”€ Mini player swipe-up PanResponder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Mini player swipe-up PanResponder ───────────────────────────────────────
   const miniPlayerPan = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, g) => g.dy < -12 && Math.abs(g.dy) > Math.abs(g.dx),
@@ -304,7 +324,7 @@ export default function App() {
     })
   ).current;
 
-  // â”€â”€ [NEW] Album art swipe PanResponder â”€â”€
+  // ── [NEW] Album art swipe PanResponder ──
   const albumPanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -326,7 +346,7 @@ export default function App() {
     })
   ).current;
 
-  // â”€â”€â”€ Custom Alert Helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Custom Alert Helper ──────────────────────────────────────────────────────
   const showAlert = useCallback((title: string, message: string, buttons?: AlertButton[]) => {
     setAlertTitle(title);
     setAlertMessage(message);
@@ -334,11 +354,11 @@ export default function App() {
     setAlertVisible(true);
   }, []);
 
-  // â”€â”€â”€ Keep posRef / durRef in sync â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Keep posRef / durRef in sync ─────────────────────────────────────────────
   useEffect(() => { posRef.current = posRaw; }, [posRaw]);
   useEffect(() => { durRef.current = durRaw; }, [durRaw]);
 
-  // â”€â”€â”€ Ring animations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Ring animations ─────────────────────────────────────────────────────────
   useEffect(() => {
     let t1: any, t2: any;
     if (isPlaying) {
@@ -354,7 +374,7 @@ export default function App() {
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [isPlaying]);
 
-  // â”€â”€â”€ [VISUAL] Vinyl rotation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── [VISUAL] Vinyl rotation ──────────────────────────────────────────────────
   useEffect(() => {
     let vinylLoop: any;
     if (isPlaying) {
@@ -368,7 +388,7 @@ export default function App() {
     return () => { if (vinylLoop) vinylLoop.stop(); };
   }, [isPlaying]);
 
-  // â”€â”€â”€ Shake sensor â”€ always active, ref-based so no stale closure â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Shake sensor ─ always active, ref-based so no stale closure ────────────
   const shakeCountRef    = useRef(0);
   const shakeAboveRef    = useRef(false);
   const lastShakeTsRef   = useRef(0);
@@ -403,7 +423,7 @@ export default function App() {
       }
       shakeAboveRef.current = isAbove;
     });
-  }, []); // no deps â€” reads from ref instead
+  }, []); // no deps — reads from ref instead
 
   useEffect(() => {
     // Start/stop based on toggle
@@ -423,7 +443,7 @@ export default function App() {
   }, [startShake]);
 
 
-  // â”€â”€â”€ [VISUAL] 4-bar equalizer animation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── [VISUAL] 4-bar equalizer animation ──────────────────────────────────────
   useEffect(() => {
     const barCfg = [
       { bar: eqBar1, dur: 420, delay: 0   },
@@ -451,7 +471,7 @@ export default function App() {
 
 
 
-  // â”€â”€â”€ [NEW] Save resume position every 5 seconds â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── [NEW] Save resume position every 5 seconds ───────────────────────────────
   useEffect(() => {
     if (!activeTrack || !isPlaying) return;
     const interval = setInterval(async () => {
@@ -462,7 +482,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isPlaying, activeTrack, posRaw]);
 
-  // â”€â”€â”€ [NEW] Lyric sync â€” highlight current line â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── [NEW] Lyric sync — highlight current line ────────────────────────────────
   useEffect(() => {
     if (parsedLyrics.length === 0) return;
     let idx = -1;
@@ -479,7 +499,7 @@ export default function App() {
     }
   }, [posRaw, parsedLyrics]);
 
-  // â”€â”€â”€ Save position every 5s â†’ restore mini player on app reopen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Save position every 5s → restore mini player on app reopen ───────────────
   useEffect(() => {
     if (!activeTrack?.id || posRaw <= 0) return;
     const tid = setInterval(() => {
@@ -489,7 +509,7 @@ export default function App() {
     return () => clearInterval(tid);
   }, [activeTrack?.id, posRaw]);
 
-  // â”€â”€â”€ Initial load â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Initial load ─────────────────────────────────────────────────────────────
   useEffect(() => {
     const init = async () => {
       try {
@@ -527,7 +547,7 @@ export default function App() {
       finally { setIsAppReady(true); }
     };
     init();
-    // â”€â”€ Restore last played track on app reopen â”€â”€
+    // ── Restore last played track on app reopen ──
     AsyncStorage.getItem('lastActiveTrack').then(async (raw) => {
       if (!raw) return;
       try {
@@ -545,14 +565,14 @@ export default function App() {
           if (savedPos) await TrackPlayer.seekTo(parseFloat(savedPos));
           // 3. SET activeTrack so mini player shows up (paused)
           setActiveTrack(saved);
-          // 4. Do NOT auto-play â€” user will tap play
+          // 4. Do NOT auto-play — user will tap play
         }
       } catch {}
     });
     const keepAlive = setInterval(() => {
       fetch(`${BACKEND_URL}/ping`).catch(() => {});
     }, 4 * 60 * 1000);
-    // â”€â”€ Trending: fire multiple saavn.dev requests in parallel, pick first with data
+    // ── Trending: fire multiple saavn.dev requests in parallel, pick first with data
     const mapSaavnTrend = (s: any) => {
       const dlUrls: any[] = s.downloadUrl || [];
       const imgs: any[]   = s.image || [];
@@ -591,7 +611,7 @@ export default function App() {
     return () => clearInterval(keepAlive);
   }, []);
 
-  // â”€â”€â”€ RNTP setup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── RNTP setup ──────────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
@@ -608,10 +628,10 @@ export default function App() {
     })();
   }, []);
 
-  // â”€â”€â”€ Sync state refs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Sync state refs ─────────────────────────────────────────────────────────
   useEffect(() => { queueCtxRef.current = { activeTrack, userId, userToken, currentMood, downloads }; });
 
-  // â”€â”€â”€ RNTP track-changed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── RNTP track-changed ───────────────────────────────────────────────────────
   useTrackPlayerEvents([Event.PlaybackTrackChanged], async (event: any) => {
     if (event.nextTrack !== undefined && event.nextTrack !== null) {
       try {
@@ -631,10 +651,10 @@ export default function App() {
     }
   });
 
-  // â”€â”€â”€ RNTP queue-ended â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── RNTP queue-ended ─────────────────────────────────────────────────────────
   useTrackPlayerEvents([Event.PlaybackQueueEnded], async () => { prefillQueue(); });
 
-  // â”€â”€â”€ BackHandler refs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── BackHandler refs ─────────────────────────────────────────────────────────
   useEffect(() => { screenRef.current = currentScreen; }, [currentScreen]);
   useEffect(() => { fullScreenRef.current = isFullScreen; }, [isFullScreen]);
   useEffect(() => { searchQueryRef.current = searchQuery; }, [searchQuery]);
@@ -643,7 +663,7 @@ export default function App() {
     const onBack = (): boolean => {
       if (fullScreenRef.current) { setIsFullScreen(false); return true; }
       if (screenRef.current !== 'all_songs') { setCurrentScreen('all_songs'); return true; }
-      // [FIX] If search is active, clear it first â€” don't exit the app
+      // [FIX] If search is active, clear it first — don't exit the app
       if (searchQueryRef.current.trim().length > 0) {
         setSearchQuery('');
         setIsSearchFocused(false);
@@ -659,7 +679,7 @@ export default function App() {
     return () => sub.remove();
   }, []);
 
-  // â”€â”€â”€ Search debounce â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Search debounce ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (searchQuery.trim().length === 0) { setSongsList([]); setAlbumResults([]); setExpandedAlbumId(null); return; }
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
@@ -667,7 +687,7 @@ export default function App() {
     return () => clearTimeout(typingTimeoutRef.current);
   }, [searchQuery]);
 
-  // â”€â”€â”€ API helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── API helper ──────────────────────────────────────────────────────────────
   const apiCall = async (endpoint: string, method = 'GET', body: any = null, token?: string) => {
     const t = token || userToken;
     const headers: any = { 'Content-Type': 'application/json' };
@@ -678,7 +698,7 @@ export default function App() {
     return resp.json();
   };
 
-  // â”€â”€â”€ Load user data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Load user data ───────────────────────────────────────────────────────────
   const loadUserData = async (token: string) => {
     try {
       const [favsRes, plRes, dlRes, profileRes] = await Promise.all([
@@ -703,7 +723,7 @@ export default function App() {
     } catch (e) { console.error('loadUserData error', e); }
   };
 
-  // â”€â”€â”€ Load recently played â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Load recently played ─────────────────────────────────────────────────────
   const loadRecentlyPlayed = async (token?: string) => {
     const t = token || userToken;
     if (!t) return;
@@ -714,7 +734,7 @@ export default function App() {
     } catch {}
   };
 
-  // â”€â”€â”€ Auth â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Auth ────────────────────────────────────────────────────────────────────
   const handleAuth = async () => {
     if (!email || !password) { showAlert('Missing Fields', 'Enter email and password.'); return; }
     setIsLoading(true);
@@ -761,7 +781,7 @@ export default function App() {
     catch (e) { console.error('updateSetting error', e); }
   };
 
-  // â”€â”€â”€ Favorites â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Favorites ───────────────────────────────────────────────────────────────
   const toggleFavorite = async (song: any) => {
     try {
       const json = await apiCall('/api/user/favorites', 'POST', song);
@@ -770,7 +790,7 @@ export default function App() {
   };
   const isTrackFavorite = (id: string) => favorites.some(f => f.id === id);
 
-  // â”€â”€â”€ Playlists â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Playlists ───────────────────────────────────────────────────────────────
   const createNewPlaylist = async () => {
     const name = newPlaylistName.trim();
     if (!name) { showAlert('Name Required', 'Please enter a playlist name.'); return; }
@@ -793,7 +813,7 @@ export default function App() {
     } catch (e) { console.error('addToPlaylist error', e); }
   };
 
-  // â”€â”€â”€ Downloads â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Downloads ───────────────────────────────────────────────────────────────
   const downloadSong = async (song: any) => {
     if (downloads.some(d => d.id === song.id)) { showAlert('Already Downloaded', 'This song is already saved offline.'); return; }
     try {
@@ -824,8 +844,8 @@ export default function App() {
     ]);
   };
 
-  // â”€â”€â”€ Search â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // â”€â”€â”€ Search: movies/albums from saavn.dev â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Search ──────────────────────────────────────────────────────────────────
+  // ─── Search: movies/albums from saavn.dev ─────────────────────────────────
   const fetchMovieResults = async (query: string) => {
     try {
       const ctrl1 = new AbortController(); const t1 = setTimeout(() => ctrl1.abort(), 8000);
@@ -844,7 +864,7 @@ export default function App() {
     } catch { setMovieResults([]); }
   };
 
-  // Open a movie â€” fetch all its songs from saavn.dev albums endpoint
+  // Open a movie — fetch all its songs from saavn.dev albums endpoint
   const openMovie = async (movie: any) => {
     setSelectedMovie(movie);
     setIsMovieSongsLoading(true);
@@ -896,7 +916,7 @@ export default function App() {
         });
         setSongsList(results);
         setAlbumResults([]);
-        // Fire movie search in parallel â€” don't block song results
+        // Fire movie search in parallel — don't block song results
         fetchMovieResults(query);
         return;
       }
@@ -930,7 +950,7 @@ export default function App() {
     });
   };
 
-  // â”€â”€â”€ Fetch autoplay queue â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Fetch autoplay queue ─────────────────────────────────────────────────────
   const fetchQueue = async (songId: string, mood: string) => {
     try {
       const resp = await fetch(`${BACKEND_URL}/api/recommendations/queue?songId=${songId}&userId=${userId||''}&mood=${mood}`);
@@ -939,7 +959,7 @@ export default function App() {
     } catch {}
   };
 
-  // â”€â”€â”€ Stream URL resolver (with audio quality) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Stream URL resolver (with audio quality) ────────────────────────────────
   const resolveStreamUrl = useCallback(async (song: any): Promise<string> => {
     const dl = downloads.find((d: any) => d.id === song.id);
     if (dl?.localUri) return dl.localUri;
@@ -977,7 +997,7 @@ export default function App() {
     return `${BACKEND_URL}/api/stream?id=${song.id}&title=${te}&artist=${ae}`;
   }, [downloads, audioQuality]);
 
-  // â”€â”€â”€ Add songs to RNTP queue â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Add songs to RNTP queue ──────────────────────────────────────────────────
   const addSongsToQueue = useCallback(async (songs: any[], limitN = 5) => {
     let added = 0;
     for (const song of songs) {
@@ -993,7 +1013,7 @@ export default function App() {
     }
   }, [resolveStreamUrl]);
 
-  // â”€â”€â”€ Pre-fill queue â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Pre-fill queue ───────────────────────────────────────────────────────────
   const prefillQueue = useCallback(async () => {
     const { activeTrack: at, userId: uid, currentMood: mood } = queueCtxRef.current;
     if (!at) return;
@@ -1010,13 +1030,13 @@ export default function App() {
         filled = true;
       }
     } catch {}
-    // 2. Fallback: same-artist from Saavn.dev â†’ then title keywords â†’ then random
+    // 2. Fallback: same-artist from Saavn.dev → then title keywords → then random
     if (!filled && handleAutoNextRef.current) {
       await handleAutoNextRef.current();
     }
   }, [addSongsToQueue]);
 
-  // â”€â”€â”€ Fetch artist tracks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Fetch artist tracks ──────────────────────────────────────────────────────
   const fetchArtist = async (artist: any) => {
     setActiveArtist(artist); setArtistTracks([]); setArtistLoading(true);
     setIsArtistMode(true); artistPlayedRef.current = new Set();
@@ -1029,21 +1049,21 @@ export default function App() {
     finally { setArtistLoading(false); }
   };
 
-  // â”€â”€â”€ Remove from recently played â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Remove from recently played ─────────────────────────────────────────────
   const removeFromHistory = async (song: any) => {
     setRecentlyPlayed(prev => prev.filter(s => s.id !== song.id));
     try { await apiCall(`/api/user/history/${song.id}`, 'DELETE'); }
     catch (e) { loadRecentlyPlayed(); }
   };
 
-  // â”€â”€â”€ [NEW] Change playback speed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── [NEW] Change playback speed ──────────────────────────────────────────────
   const changePlaybackSpeed = async (speed: number) => {
     setPlaybackSpeedState(speed);
     try { await (TrackPlayer as any).setRate(speed); } catch {}
     setShowSpeedPicker(false);
   };
 
-  // â”€â”€â”€ [NEW] Rate song (like / dislike) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── [NEW] Rate song (like / dislike) ────────────────────────────────────────
   const rateSong = async (song: any, rating: 'like'|'dislike') => {
     if (!song) return;
     const current = ratedSongs[song.id];
@@ -1058,14 +1078,14 @@ export default function App() {
     try { await apiCall('/api/user/rating', 'POST', { songId: song.id, rating: newRating }); } catch {}
   };
 
-  // â”€â”€â”€ [NEW] Send skip signal to backend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── [NEW] Send skip signal to backend ───────────────────────────────────────
   const sendSkipSignal = async (songId: string) => {
     if (!songId) return;
     try { await apiCall('/api/user/skip', 'POST', { songId }); } catch {}
   };
 
-  // â”€â”€â”€ [NEW] Toggle Listen Later â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // â”€â”€â”€ Add to Next (inserts song at next position in TrackPlayer queue) â”€â”€â”€â”€â”€â”€â”€
+  // ─── [NEW] Toggle Listen Later ────────────────────────────────────────────────
+  // ─── Add to Next (inserts song at next position in TrackPlayer queue) ───────
   const addToNext = async (song: any) => {
     if (!song) return;
     try {
@@ -1078,13 +1098,13 @@ export default function App() {
         artwork: song.image || '', duration: song.duration || 0,
       }, insertAt);
       trackMetaRef.current.set(String(song.id), song);
-      showAlert('Added â–¶', `"${song.title}" will play next`);
+      showAlert('Added ▶', `"${song.title}" will play next`);
     } catch {
       showAlert('Error', 'Could not add to queue');
     }
   };
 
-  // â”€â”€â”€ [NEW] Add / Remove bookmark at current position â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── [NEW] Add / Remove bookmark at current position ─────────────────────────
   const addBookmark = () => {
     if (!activeTrack) return;
     const sec = Math.floor(posRaw);
@@ -1096,7 +1116,7 @@ export default function App() {
       }
       const updated = { ...prev, [activeTrack.id]: [...existing, sec].sort((a, b) => a - b) };
       AsyncStorage.setItem('bookmarks', JSON.stringify(updated));
-      showAlert('Bookmark Added ðŸ”–', `Marked at ${formatTime(sec * 1000)}`);
+      showAlert('Bookmark Added 🔖', `Marked at ${formatTime(sec * 1000)}`);
       return updated;
     });
   };
@@ -1109,7 +1129,7 @@ export default function App() {
     });
   };
 
-  // â”€â”€â”€ Fetch related songs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Fetch related songs ─────────────────────────────────────────────────────
   const fetchRelatedSongs = useCallback(async (song: any) => {
     if (!song) return;
     setRelatedLoading(true);
@@ -1144,10 +1164,10 @@ export default function App() {
 
     // 1. Try backend
     try {
-      const r = await fetch(`${BACKEND_URL}/api/recommendations/related?songId=${song.id}&artist=${encodeURIComponent(song.artist || '')}&mood=${currentMood}`);
+      const r = await fetch(`${BACKEND_URL}/api/recommendations/queue?songId=${song.id}&artist=${encodeURIComponent(song.artist || '')}&mood=${currentMood}`);
       const j = await r.json();
-      if (j.success && (j.songs?.length > 0 || j.queue?.length > 0)) {
-        setRelatedSongs(j.songs || j.queue);
+      if (j.success && j.queue?.length > 0) {
+        setRelatedSongs(j.queue);
         setRelatedLoading(false);
         return;
       }
@@ -1175,7 +1195,7 @@ export default function App() {
     setRelatedLoading(false);
   }, [currentMood, songsList]);
 
-  // â”€â”€â”€ [NEW] Parse LRC lyrics format â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── [NEW] Parse LRC lyrics format ───────────────────────────────────────────
   const parseLRC = (lrcText: string): {time:number,text:string}[] => {
     const lines = lrcText.split('\n');
     const result: {time:number,text:string}[] = [];
@@ -1191,7 +1211,7 @@ export default function App() {
     return result.sort((a, b) => a.time - b.time);
   };
 
-  // â”€â”€â”€ Play track â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Play track ───────────────────────────────────────────────────────────────
   async function handleTrackPress(track: any) {
     setIsLoading(true);
     setIsYoutubeFallback(track.id?.startsWith('yt_') || false);
@@ -1269,7 +1289,7 @@ export default function App() {
     }
   }
 
-  // â”€â”€â”€ Controls â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Controls ────────────────────────────────────────────────────────────────
   const togglePlayPause = async () => {
     if (!activeTrack) return;
     if (isPlaying) await TrackPlayer.pause();
@@ -1290,7 +1310,7 @@ export default function App() {
     await TrackPlayer.seekTo(pct * durRaw);
   };
 
-  // â”€â”€â”€ Repeat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Repeat ──────────────────────────────────────────────────────────────────
   const toggleRepeat = async () => {
     const modes: ('off'|'all'|'one')[] = ['off', 'all', 'one'];
     const next = modes[(modes.indexOf(repeatMode) + 1) % 3];
@@ -1300,7 +1320,7 @@ export default function App() {
     else await TrackPlayer.setRepeatMode(RepeatMode.Track);
   };
 
-  // â”€â”€â”€ Shuffle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Shuffle ─────────────────────────────────────────────────────────────────
   const toggleShuffle = async () => {
     const next = !isShuffled;
     setIsShuffled(next);
@@ -1313,7 +1333,7 @@ export default function App() {
     }
   };
 
-  // â”€â”€â”€ Sleep Timer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Sleep Timer ─────────────────────────────────────────────────────────────
   const setSleepTimerDuration = async (minutes: number) => {
     if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
     setSleepTimer(minutes);
@@ -1330,7 +1350,7 @@ export default function App() {
     }
   };
 
-  // â”€â”€â”€ Lyrics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Lyrics ──────────────────────────────────────────────────────────────────
   const fetchLyrics = async (song: any) => {
     if (!song) return;
     setLyricsLoading(true); setLyrics(''); setParsedLyrics([]); setCurrentLyricIndex(-1);
@@ -1343,7 +1363,7 @@ export default function App() {
       return devanagari > text.length * 0.15; // >15% Hindi chars = Hindi lyrics
     };
 
-    // 1ï¸âƒ£ lrclib.net â€” best source for romanized English pronunciation
+    // 1️⃣ lrclib.net — best source for romanized English pronunciation
     try {
       const r2 = await fetch(`https://lrclib.net/api/search?track_name=${encodeURIComponent(title)}&artist_name=${encodeURIComponent(artist)}`);
       const j2 = await r2.json();
@@ -1362,7 +1382,7 @@ export default function App() {
         }
       }
     } catch {}
-    // 2ï¸âƒ£ lyrics.ovh â€” plain English romanized text
+    // 2️⃣ lyrics.ovh — plain English romanized text
     try {
       const r3 = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
       const j3 = await r3.json();
@@ -1370,7 +1390,7 @@ export default function App() {
         setLyrics(j3.lyrics); setLyricsLoading(false); return;
       }
     } catch {}
-    // 3ï¸âƒ£ Backend fallback
+    // 3️⃣ Backend fallback
     try {
       const resp = await fetch(`${BACKEND_URL}/api/lyrics?title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}`);
       const json = await resp.json();
@@ -1385,14 +1405,14 @@ export default function App() {
     setLyricsLoading(false);
   };
 
-  // â”€â”€â”€ Share â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Share ───────────────────────────────────────────────────────────────────
   const shareSong = async (song: any) => {
     try {
-      await Share.share({ title: song.title, message: `ðŸŽµ Listening to "${song.title}" by ${song.artist} on Zyra Music!` });
+      await Share.share({ title: song.title, message: `🎵 Listening to "${song.title}" by ${song.artist} on Zyra Music!` });
     } catch {}
   };
 
-  // â”€â”€â”€ Add single song to queue â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Add single song to queue ─────────────────────────────────────────────────
   const addSingleToQueue = async (song: any) => {
     if (!song?.id) return;
     if (trackMetaRef.current.get(String(song.id))) { showAlert('Already in Queue', 'This song is already in the up next queue.'); return; }
@@ -1404,7 +1424,7 @@ export default function App() {
     } catch { showAlert('Error', 'Could not add to queue.'); }
   };
 
-  // â”€â”€â”€ Active list helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Active list helper ───────────────────────────────────────────────────────
   const getActiveList = () => {
     if (currentScreen === 'library') return favorites;
     if (currentScreen === 'downloads') return downloads;
@@ -1416,7 +1436,7 @@ export default function App() {
     return songsList;
   };
 
-  // â”€â”€â”€ playNext / playPrevious â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── playNext / playPrevious ──────────────────────────────────────────────────
   const playNext = async () => {
     if (!activeTrack) return;
     if (repeatMode === 'one') { await TrackPlayer.seekTo(0); await TrackPlayer.play(); return; }
@@ -1434,7 +1454,7 @@ export default function App() {
 
   playNextRef.current = playNext;
 
-  // â”€â”€â”€ Genre-smart auto-next â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Genre-smart auto-next ────────────────────────────────────────────────────
   const handleAutoNext = async () => {
     if (!activeTrack) return;
     const artist = (activeTrack.artist || '').split(',')[0].trim();
@@ -1500,7 +1520,7 @@ export default function App() {
   };
   handleAutoNextRef.current = handleAutoNext;
 
-  // â”€â”€â”€ Shake-specific â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Shake-specific ──────────────────────────────────────────────────────────
   const handleShakeNext = async () => {
     const { activeTrack: at, userId: uid, currentMood: mood } = queueCtxRef.current;
     if (!at) return;
@@ -1510,7 +1530,7 @@ export default function App() {
       const res = await fetch(`${BACKEND_URL}/api/autoplay?${qs}`);
       const json = await res.json();
       if (json.success && json.song) {
-        setAutoplayReason(json.reason || 'âœ¨ Shaken to same genre');
+        setAutoplayReason(json.reason || '✨ Shaken to same genre');
         setCurrentMood(json.mood || 'default');
         await handleTrackPress(json.song);
         return;
@@ -1523,7 +1543,7 @@ export default function App() {
   };
   handleShakeNextRef.current = handleShakeNext;
 
-  // â”€â”€â”€ Theme â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Theme ───────────────────────────────────────────────────────────────────
   const isAmoled = themeMode === 'amoled';
   const isDark   = themeMode !== 'light';
   // Per-theme bg/card overrides
@@ -1549,7 +1569,7 @@ export default function App() {
     pillActive:   (MOOD_COLORS[currentMood] || '#00ffcc') + '28',
   };
 
-  // â”€â”€â”€ [VISUAL] Equalizer bars component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── [VISUAL] Equalizer bars component ──────────────────────────────────────
   const EqualizerBars = ({ color, height = 16 }: { color: string; height?: number }) => (
     <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 2, height, marginLeft: 6 }}>
       {[eqBar1, eqBar2, eqBar3, eqBar4].map((bar, i) => (
@@ -1567,7 +1587,7 @@ export default function App() {
     </View>
   );
 
-  // â”€â”€â”€ Track card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Track card ───────────────────────────────────────────────────────────────
   const renderTrackCard = (song: any, isCurrent: boolean, isFav: boolean) => (
     <TouchableOpacity
       key={song.id}
@@ -1606,14 +1626,14 @@ export default function App() {
     </TouchableOpacity>
   );
 
-  // â”€â”€â”€ Loading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Loading ──────────────────────────────────────────────────────────────────
   if (!isAppReady) return (
     <View style={styles.container}>
       <ActivityIndicator color="#00ffcc" size="large" style={{ marginTop: '50%' }} />
     </View>
   );
 
-  // â”€â”€â”€ Auth screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Auth screen ──────────────────────────────────────────────────────────────
   if (!isLoggedIn) {
     const handleForgotPassword = async () => {
       if (!resetEmail) { showAlert('Error', 'Please enter your email.'); return; }
@@ -1752,7 +1772,7 @@ export default function App() {
     );
   }
 
-  // â”€â”€â”€ Main App â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Main App ─────────────────────────────────────────────────────────────────
   const moodColor = MOOD_COLORS[currentMood] || '#00ffcc';
   const sleepRemaining = sleepTimer > 0 && sleepTimerEnd > 0 ? Math.max(0, Math.floor((sleepTimerEnd - Date.now()) / 1000)) : 0;
   const lyricsFontSizeMap = { sm: 13, md: 15, lg: 18 };
@@ -1766,20 +1786,9 @@ export default function App() {
 
       {/* HEADER */}
       <View style={[styles.header, { backgroundColor: theme.header }]}>
-        <View style={[styles.headerPill, { backgroundColor: moodColor + '18', borderColor: moodColor + '44' }]}>
-          <Text style={[styles.headerTitle, { color: isDark ? '#fff' : theme.text }]}>
-            {currentScreen === 'all_songs'     ? 'HOME'
-            : currentScreen === 'library'      ? 'LIBRARY'
-            : currentScreen === 'downloads'    ? 'DOWNLOADS'
-            : currentScreen === 'listen_later' ? 'LISTEN LATER'
-            : currentScreen === 'playlist_view'? 'PLAYLIST'
-            : currentScreen === 'artist_profile' ? (activeArtist?.name || 'ARTIST').toUpperCase()
-            : 'SETTINGS'}
-          </Text>
-        </View>
         {sleepTimer > 0 && (
           <Text style={{ color: '#ff9944', fontSize: 11, marginTop: 4, fontWeight: '600' }}>
-            ðŸ˜´ Sleep in {Math.floor(sleepRemaining / 60)}:{String(sleepRemaining % 60).padStart(2, '0')}
+            😴 Sleep in {Math.floor(sleepRemaining / 60)}:{String(sleepRemaining % 60).padStart(2, '0')}
           </Text>
         )}
         {autoplayReason.length > 0 && currentScreen === 'all_songs' && sleepTimer === 0 && (
@@ -1789,10 +1798,10 @@ export default function App() {
 
       <View style={styles.content}>
 
-        {/* â”€â”€ HOME â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {/* ── HOME ─────────────────────────────────────────────────────────── */}
         {currentScreen === 'all_songs' && (
           <View style={styles.screenBody}>
-            {/* â”€â”€ Search Bar â”€â”€ */}
+            {/* ── Search Bar ── */}
             <View style={styles.searchBox}>
               <Ionicons name="search" size={20} color="#666" style={{ marginRight: 10 }} />
               <TextInput
@@ -1813,7 +1822,7 @@ export default function App() {
 
             {searchQuery.trim().length > 0 ? (
               <View style={{ flex: 1 }}>
-                {/* â”€â”€ Compact filter chips â€” RIGHT below search bar â”€â”€ */}
+                {/* ── Compact filter chips — RIGHT below search bar ── */}
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}
                   style={{ marginBottom: 8, flexGrow: 0 }}
                   contentContainerStyle={{ gap: 6, paddingRight: 8, alignItems: 'center' }}>
@@ -1827,7 +1836,7 @@ export default function App() {
                   ))}
                 </ScrollView>
 
-                {/* â”€â”€ Echo Music Style: History + Suggestions + Results in one scroll â”€â”€ */}
+                {/* ── Echo Music Style: History + Suggestions + Results in one scroll ── */}
                 <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
                   {/* SECTION 1: Search History (matching) */}
@@ -1939,7 +1948,7 @@ export default function App() {
                     </>
                   )}
 
-                  {/* â”€â”€â”€â”€ Movies â”€â”€â”€â”€ */}
+                  {/* ──── Movies ──── */}
                   {(searchFilter === 'all' || searchFilter === 'movies') && movieResults.length > 0 && (
                     <>
                       <Text style={[styles.echoSectionLabel, { color: moodColor }]}>Movies</Text>
@@ -1955,7 +1964,7 @@ export default function App() {
                           <View style={{ flex: 1 }}>
                             <Text numberOfLines={1} style={{ color: theme.text, fontSize: 15, fontWeight: '700' }}>{movie.name}</Text>
                             <Text numberOfLines={1} style={{ color: theme.subtext, fontSize: 12, fontStyle: 'italic' }}>
-                              {movie.year ? `${movie.year} Â· ` : ''}{movie.artists || 'Soundtrack'}
+                              {movie.year ? `${movie.year} · ` : ''}{movie.artists || 'Soundtrack'}
                             </Text>
                           </View>
                           <View style={{ alignItems: 'center', marginLeft: 8 }}>
@@ -1987,10 +1996,10 @@ export default function App() {
                 </ScrollView>
               </View>
             ) : (
-              /* â”€â”€ HOME FEED â”€â”€ */
+              /* ── HOME FEED ── */
               <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
 
-                {/* Search history â€” only show when search bar is focused and query is empty */}
+                {/* Search history — only show when search bar is focused and query is empty */}
                 {isSearchFocused && searchHistory.length > 0 && (
                   <View style={{ backgroundColor: theme.card, borderRadius: 16, marginBottom: 12, overflow: 'hidden', borderWidth: 1, borderColor: theme.border }}>
                     <Text style={{ color: moodColor, fontSize: 12, fontWeight: '800', letterSpacing: 1, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 6, textTransform: 'uppercase' }}>Search history</Text>
@@ -2062,28 +2071,28 @@ export default function App() {
                   </>
                 )}
 
-                {/* â”€â”€ Moods & Genres â€” 3-column grid â”€â”€ */}
+                {/* ── Moods & Genres — 3-column grid ── */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                   <Text style={styles.echoSectionLabel}>Moods &amp; Genres</Text>
                   <TouchableOpacity onPress={() => setShowMoodGenres(true)}>
-                    <Text style={{ color: moodColor, fontSize: 13, fontWeight: '700' }}>See all â†’</Text>
+                    <Text style={{ color: moodColor, fontSize: 13, fontWeight: '700' }}>See all →</Text>
                   </TouchableOpacity>
                 </View>
                 <Text style={{ color: theme.subtext, fontSize: 11, fontStyle: 'italic', marginBottom: 12 }}>PICK YOUR VIBE FOR TODAY</Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 28 }}>
                   {[
-                    { label: 'Romantic', emoji: 'â¤ï¸', mood: 'romantic', color: '#d41051' },
-                    { label: 'Sad',      emoji: 'ðŸ˜¢', mood: 'sad',      color: '#502db0' },
-                    { label: 'Party',    emoji: 'ðŸŽ‰', mood: 'item',     color: '#ff1900' },
-                    { label: '90s',      emoji: 'ðŸŽ¶', mood: '90s',      color: '#d55e14' },
-                    { label: 'Bhajan',   emoji: 'ðŸ™', mood: 'bhajan',   color: '#e51ae8' },
-                    { label: 'Energy',   emoji: 'âš¡', mood: 'energetic',color: '#4000ff' },
-                    { label: 'Sleep',    emoji: 'ðŸ˜´', mood: 'sleep',    color: '#1a6b8a' },
-                    { label: 'Chill',    emoji: 'ðŸŽµ', mood: 'chill',    color: '#2d7a4f' },
-                    { label: 'Workout',  emoji: 'ðŸ’ª', mood: 'workout',  color: '#b84000' },
-                    { label: 'Focus',    emoji: 'ðŸŽ¯', mood: 'focus',    color: '#0066cc' },
-                    { label: 'Happy',    emoji: 'ðŸ˜Š', mood: 'happy',    color: '#cc6600' },
-                    { label: 'Gaming',   emoji: 'ðŸŽ®', mood: 'gaming',   color: '#6600cc' },
+                    { label: 'Romantic', emoji: '❤️', mood: 'romantic', color: '#d41051' },
+                    { label: 'Sad',      emoji: '😢', mood: 'sad',      color: '#502db0' },
+                    { label: 'Party',    emoji: '🎉', mood: 'item',     color: '#ff1900' },
+                    { label: '90s',      emoji: '🎶', mood: '90s',      color: '#d55e14' },
+                    { label: 'Bhajan',   emoji: '🙏', mood: 'bhajan',   color: '#e51ae8' },
+                    { label: 'Energy',   emoji: '⚡', mood: 'energetic',color: '#4000ff' },
+                    { label: 'Sleep',    emoji: '😴', mood: 'sleep',    color: '#1a6b8a' },
+                    { label: 'Chill',    emoji: '🎵', mood: 'chill',    color: '#2d7a4f' },
+                    { label: 'Workout',  emoji: '💪', mood: 'workout',  color: '#b84000' },
+                    { label: 'Focus',    emoji: '🎯', mood: 'focus',    color: '#0066cc' },
+                    { label: 'Happy',    emoji: '😊', mood: 'happy',    color: '#cc6600' },
+                    { label: 'Gaming',   emoji: '🎮', mood: 'gaming',   color: '#6600cc' },
                   ].map(g => (
                     <TouchableOpacity key={g.mood}
                       style={{ backgroundColor: g.color + '22', borderWidth: 1.5, borderColor: g.color + '88', borderRadius: 14, paddingVertical: 10, paddingHorizontal: 4, alignItems: 'center', width: '31%' }}
@@ -2122,8 +2131,8 @@ export default function App() {
                   ))}
                 </View>
 
-                {/* â”€â”€ Trending Now â”€â”€ */}
-                <Text style={[styles.echoSectionLabel, { marginBottom: 2 }]}>Trending Now ðŸ”¥</Text>
+                {/* ── Trending Now ── */}
+                <Text style={[styles.echoSectionLabel, { marginBottom: 2 }]}>Trending Now 🔥</Text>
                 <Text style={{ color: theme.subtext, fontSize: 11, fontStyle: 'italic', marginBottom: 12 }}>MUSIC THAT'S HOT AND HAPPENING</Text>
                 {trendingSongs.length > 0 ? (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 28 }}>
@@ -2145,20 +2154,20 @@ export default function App() {
                   </View>
                 )}
 
-                {/* â”€â”€ Bollywood & Regional â€” 3-column grid â”€â”€ */}
-                <Text style={[styles.echoSectionLabel, { marginBottom: 2 }]}>Bollywood &amp; Regional ðŸŽ¬</Text>
+                {/* ── Bollywood & Regional — 3-column grid ── */}
+                <Text style={[styles.echoSectionLabel, { marginBottom: 2 }]}>Bollywood &amp; Regional 🎬</Text>
                 <Text style={{ color: theme.subtext, fontSize: 11, fontStyle: 'italic', marginBottom: 12 }}>HIT THE HOME TEAM'S DANCE FLOOR</Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 28 }}>
                   {[
-                    { label: 'Bollywood', emoji: 'ðŸŽ¬', query: 'bollywood hits 2024',   color: '#e01060' },
-                    { label: 'Punjabi',   emoji: 'ðŸŽ¤', query: 'punjabi hits 2024',     color: '#f57c00' },
-                    { label: 'Haryanvi',  emoji: 'ðŸŒ¿', query: 'haryanvi hits 2024',    color: '#2e7d32' },
-                    { label: 'Tamil',     emoji: 'ðŸŒŠ', query: 'tamil hits 2024',       color: '#0277bd' },
-                    { label: 'Telugu',    emoji: 'ðŸŒŸ', query: 'telugu hits 2024',      color: '#6a1b9a' },
-                    { label: 'Retro 90s', emoji: 'ðŸ’«', query: '90s hindi hits',        color: '#c62828' },
-                    { label: 'Devotional',emoji: 'ðŸ™', query: 'bhajan devotional',     color: '#ff8f00' },
-                    { label: 'Romantic',  emoji: 'â¤ï¸', query: 'romantic hindi songs',  color: '#d41051' },
-                    { label: 'Party',     emoji: 'ðŸŽ‰', query: 'party songs 2024',      color: '#ff1900' },
+                    { label: 'Bollywood', emoji: '🎬', query: 'bollywood hits 2024',   color: '#e01060' },
+                    { label: 'Punjabi',   emoji: '🎤', query: 'punjabi hits 2024',     color: '#f57c00' },
+                    { label: 'Haryanvi',  emoji: '🌿', query: 'haryanvi hits 2024',    color: '#2e7d32' },
+                    { label: 'Tamil',     emoji: '🌊', query: 'tamil hits 2024',       color: '#0277bd' },
+                    { label: 'Telugu',    emoji: '🌟', query: 'telugu hits 2024',      color: '#6a1b9a' },
+                    { label: 'Retro 90s', emoji: '💫', query: '90s hindi hits',        color: '#c62828' },
+                    { label: 'Devotional',emoji: '🙏', query: 'bhajan devotional',     color: '#ff8f00' },
+                    { label: 'Romantic',  emoji: '❤️', query: 'romantic hindi songs',  color: '#d41051' },
+                    { label: 'Party',     emoji: '🎉', query: 'party songs 2024',      color: '#ff1900' },
                   ].map(g => (
                     <TouchableOpacity key={g.query}
                       style={{ backgroundColor: g.color + '22', borderWidth: 1.5, borderColor: g.color + '88', borderRadius: 14, paddingVertical: 10, paddingHorizontal: 4, alignItems: 'center', width: '31%' }}
@@ -2184,7 +2193,7 @@ export default function App() {
                   ))}
                 </View>
 
-                {/* â”€â”€ Top Artists â€” 3-column grid â”€â”€ */}
+                {/* ── Top Artists — 3-column grid ── */}
                 {topArtists.length > 0 && (
                   <>
                     <Text style={[styles.echoSectionLabel, { marginBottom: 4 }]}>Top Artists</Text>
@@ -2239,7 +2248,7 @@ export default function App() {
           </View>
         )}
 
-        {/* â”€â”€ LIBRARY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {/* ── LIBRARY ─────────────────────────────────────────────────────── */}
         {currentScreen === 'library' && (
           <View style={styles.screenBody}>
             <Text style={styles.sectionHeader}>Your Playlists</Text>
@@ -2284,14 +2293,14 @@ export default function App() {
           </View>
         )}
 
-        {/* â”€â”€ LISTEN LATER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {/* ── LISTEN LATER ────────────────────────────────────────────────── */}
         {currentScreen === 'listen_later' && (
           <View style={styles.screenBody}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
               <TouchableOpacity onPress={() => setCurrentScreen('library')} style={{ paddingRight: 14 }}>
                 <Ionicons name="arrow-back" size={24} color="#fff" />
               </TouchableOpacity>
-              <Text style={[styles.mainText, { marginBottom: 0 }]}>â° Listen Later ({listenLater.length})</Text>
+              <Text style={[styles.mainText, { marginBottom: 0 }]}>⏰ Listen Later ({listenLater.length})</Text>
             </View>
             {listenLater.length === 0 ? (
               <View style={styles.centeredBody}>
@@ -2307,7 +2316,7 @@ export default function App() {
           </View>
         )}
 
-        {/* â”€â”€ PLAYLIST VIEW â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {/* ── PLAYLIST VIEW ────────────────────────────────────────────────── */}
         {currentScreen === 'playlist_view' && activePlaylistId && (
           <View style={styles.screenBody}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
@@ -2322,7 +2331,7 @@ export default function App() {
           </View>
         )}
 
-        {/* â”€â”€ DOWNLOADS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {/* ── DOWNLOADS ───────────────────────────────────────────────────── */}
         {currentScreen === 'downloads' && (
           <View style={styles.screenBody}>
             <Text style={styles.sectionHeader}>Offline Folder ({downloads.length})</Text>
@@ -2367,7 +2376,7 @@ export default function App() {
           </View>
         )}
 
-        {/* â”€â”€ SETTINGS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {/* ── SETTINGS ────────────────────────────────────────────────────── */}
         {currentScreen === 'settings' && (
           <View style={styles.screenBody}>
             <ScrollView showsVerticalScrollIndicator={false}>
@@ -2383,22 +2392,22 @@ export default function App() {
                 </TouchableOpacity>
               </View>
 
-              {/* â”€â”€â”€ THEME SECTION â€” Premium preview cards â”€â”€â”€ */}
+              {/* ─── THEME SECTION — Premium preview cards ─── */}
               <View style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card, flexDirection: 'column', alignItems: 'flex-start' }]}>
-                <Text style={[styles.settingTitle, { color: theme.text, marginBottom: 14 }]}>ðŸŽ¨ Appearance</Text>
+                <Text style={[styles.settingTitle, { color: theme.text, marginBottom: 14 }]}>🎨 Appearance</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ width: '100%' }}
                   contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
                   {([
-                    { mode: 'dark'     as const, label: 'Dark',     icon: 'ðŸŒ™', bg: '#0d0d14', card: '#16161f', accent: '#9896a8' },
-                    { mode: 'amoled'   as const, label: 'AMOLED',   icon: 'â¬›', bg: '#000000', card: '#0a0a0a', accent: '#444444' },
-                    { mode: 'light'    as const, label: 'Light',     icon: 'â˜€ï¸', bg: '#f2f2fa', card: '#ffffff', accent: '#9896a8' },
-                    { mode: 'midnight' as const, label: 'Midnight',  icon: 'ðŸ”µ', bg: '#020a18', card: '#071428', accent: '#1565c0' },
-                    { mode: 'forest'   as const, label: 'Forest',    icon: 'ðŸŒ¿', bg: '#021208', card: '#0a2010', accent: '#1b5e20' },
-                    { mode: 'sunset'   as const, label: 'Sunset',    icon: 'ðŸŒ…', bg: '#1a0808', card: '#280f0f', accent: '#b71c1c' },
-                    { mode: 'purple'   as const, label: 'Purple',    icon: 'ðŸ’œ', bg: '#0d0118', card: '#180a28', accent: '#6a1b9a' },
-                    { mode: 'ocean'    as const, label: 'Ocean',     icon: 'ðŸŒŠ', bg: '#010e18', card: '#051828', accent: '#01579b' },
-                    { mode: 'rose'     as const, label: 'Rose',      icon: 'ðŸŒ¹', bg: '#180810', card: '#280a1a', accent: '#880e4f' },
-                    { mode: 'golden'   as const, label: 'Golden',    icon: 'âœ¨', bg: '#100c00', card: '#1a1400', accent: '#f57f17' },
+                    { mode: 'dark'     as const, label: 'Dark',     icon: '🌙', bg: '#0d0d14', card: '#16161f', accent: '#9896a8' },
+                    { mode: 'amoled'   as const, label: 'AMOLED',   icon: '⬛', bg: '#000000', card: '#0a0a0a', accent: '#444444' },
+                    { mode: 'light'    as const, label: 'Light',     icon: '☀️', bg: '#f2f2fa', card: '#ffffff', accent: '#9896a8' },
+                    { mode: 'midnight' as const, label: 'Midnight',  icon: '🔵', bg: '#020a18', card: '#071428', accent: '#1565c0' },
+                    { mode: 'forest'   as const, label: 'Forest',    icon: '🌿', bg: '#021208', card: '#0a2010', accent: '#1b5e20' },
+                    { mode: 'sunset'   as const, label: 'Sunset',    icon: '🌅', bg: '#1a0808', card: '#280f0f', accent: '#b71c1c' },
+                    { mode: 'purple'   as const, label: 'Purple',    icon: '💜', bg: '#0d0118', card: '#180a28', accent: '#6a1b9a' },
+                    { mode: 'ocean'    as const, label: 'Ocean',     icon: '🌊', bg: '#010e18', card: '#051828', accent: '#01579b' },
+                    { mode: 'rose'     as const, label: 'Rose',      icon: '🌹', bg: '#180810', card: '#280a1a', accent: '#880e4f' },
+                    { mode: 'golden'   as const, label: 'Golden',    icon: '✨', bg: '#100c00', card: '#1a1400', accent: '#f57f17' },
                   ]).map(t => {
                     const isActive = themeMode === t.mode;
                     return (
@@ -2438,7 +2447,7 @@ export default function App() {
               {/* Smart Autoplay */}
               <View style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card }]}>
                 <View style={styles.textGroup}>
-                  <Text style={[styles.settingTitle, { color: theme.text }]}>ðŸ¤– Smart Auto-Play</Text>
+                  <Text style={[styles.settingTitle, { color: theme.text }]}>🤖 Smart Auto-Play</Text>
                   <Text style={[styles.settingDesc, { color: theme.subtext }]}>Plays songs based on your mood automatically</Text>
                 </View>
                 <Switch value={smartAutoplay} onValueChange={(v) => { setSmartAutoplay(v); updateSetting('smart_autoplay', v); }} trackColor={{ false: '#252545', true: moodColor }} thumbColor="#ffffff" />
@@ -2447,7 +2456,7 @@ export default function App() {
               {/* Shake */}
               <View style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card }]}>
                 <View style={styles.textGroup}>
-                  <Text style={[styles.settingTitle, { color: theme.text }]}>ðŸ“³ Shake to Skip</Text>
+                  <Text style={[styles.settingTitle, { color: theme.text }]}>📳 Shake to Skip</Text>
                   <Text style={[styles.settingDesc, { color: theme.subtext }]}>Shake phone to play a same-genre song</Text>
                 </View>
                 <Switch value={shakeEnabled} onValueChange={(v) => { setShakeEnabled(v); updateSetting('shake_enabled', v); }} trackColor={{ false: '#252545', true: moodColor }} thumbColor="#ffffff" />
@@ -2455,7 +2464,7 @@ export default function App() {
 
               {/* [NEW] Audio Quality */}
               <View style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card, flexDirection: 'column', alignItems: 'flex-start' }]}>
-                <Text style={[styles.settingTitle, { color: theme.text, marginBottom: 12 }]}>ðŸŽµ Audio Quality</Text>
+                <Text style={[styles.settingTitle, { color: theme.text, marginBottom: 12 }]}>🎵 Audio Quality</Text>
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                   {(['320kbps','160kbps','96kbps'] as const).map(q => (
                     <TouchableOpacity key={q}
@@ -2471,7 +2480,7 @@ export default function App() {
               {/* [NEW] Skip Intro / Outro */}
               <View style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card, flexDirection: 'column', alignItems: 'flex-start' }]}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%', alignItems: 'center', marginBottom: 10 }}>
-                  <Text style={[styles.settingTitle, { color: theme.text }]}>â­ Skip Intro</Text>
+                  <Text style={[styles.settingTitle, { color: theme.text }]}>⏭ Skip Intro</Text>
                   <Switch value={skipIntroEnabled} onValueChange={(v) => { setSkipIntroEnabled(v); AsyncStorage.setItem('skipIntroEnabled', String(v)); }} trackColor={{ false: '#252545', true: moodColor }} thumbColor="#ffffff" />
                 </View>
                 {skipIntroEnabled && (
@@ -2493,7 +2502,7 @@ export default function App() {
               {/* Sleep Timer */}
               <View style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card, flexDirection: 'column', alignItems: 'flex-start' }]}>
                 <Text style={[styles.settingTitle, { color: theme.text, marginBottom: 12 }]}>
-                  ðŸ˜´ Sleep Timer {sleepTimer > 0 ? `â€” ${Math.floor(sleepRemaining / 60)}:${String(sleepRemaining % 60).padStart(2, '0')} left` : ''}
+                  😴 Sleep Timer {sleepTimer > 0 ? `— ${Math.floor(sleepRemaining / 60)}:${String(sleepRemaining % 60).padStart(2, '0')} left` : ''}
                 </Text>
                 <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
                   {[0, 15, 30, 60].map(min => (
@@ -2509,7 +2518,7 @@ export default function App() {
               {/* Crossfade */}
               <View style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card }]}>
                 <View style={styles.textGroup}>
-                  <Text style={[styles.settingTitle, { color: theme.text }]}>ðŸŽµ Crossfade</Text>
+                  <Text style={[styles.settingTitle, { color: theme.text }]}>🎵 Crossfade</Text>
                   <Text style={[styles.settingDesc, { color: theme.subtext }]}>Smooth transition between songs</Text>
                 </View>
                 <Switch value={crossfadeEnabled} onValueChange={setCrossfadeEnabled} trackColor={{ false: '#252545', true: moodColor }} thumbColor="#ffffff" />
@@ -2518,7 +2527,7 @@ export default function App() {
               {/* Equalizer */}
               <TouchableOpacity style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card }]} onPress={() => setShowEqualizerModal(true)}>
                 <View style={styles.textGroup}>
-                  <Text style={[styles.settingTitle, { color: theme.text }]}>ðŸŽ›ï¸ Equalizer</Text>
+                  <Text style={[styles.settingTitle, { color: theme.text }]}>🎛️ Equalizer</Text>
                   <Text style={[styles.settingDesc, { color: theme.subtext }]}>Adjust Bass, Mid & Treble</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color={theme.subtext} />
@@ -2526,7 +2535,7 @@ export default function App() {
 
               {/* Stats */}
               <View style={[styles.settingRow, { marginBottom: 15, flexDirection: 'column', alignItems: 'flex-start', backgroundColor: theme.card }]}>
-                <Text style={[styles.settingTitle, { marginBottom: 15, color: theme.text }]}>ðŸ“Š Your Stats</Text>
+                <Text style={[styles.settingTitle, { marginBottom: 15, color: theme.text }]}>📊 Your Stats</Text>
                 <View style={{ flexDirection: 'row', gap: 20, flexWrap: 'wrap' }}>
                   <View style={styles.statBadge}><Text style={styles.statNumber}>{favorites.length}</Text><Text style={styles.statLabel}>Favorites</Text></View>
                   <View style={styles.statBadge}><Text style={styles.statNumber}>{playlists.length}</Text><Text style={styles.statLabel}>Playlists</Text></View>
@@ -2543,7 +2552,7 @@ export default function App() {
         )}
       </View>
 
-      {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• MINI PLAYER â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+      {/* ════════════════ MINI PLAYER ════════════════ */}
       {activeTrack && (
         <View
           style={{ marginHorizontal: 10, marginBottom: 8 }}
@@ -2603,7 +2612,7 @@ export default function App() {
           {/* Content row */}
           <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 13 }}>
 
-            {/* Circular thumbnail â€” ring drawn above as absolute overlay */}
+            {/* Circular thumbnail — ring drawn above as absolute overlay */}
             {(() => {
               const SZ = 62; const SW = 3;
               return (
@@ -2630,12 +2639,12 @@ export default function App() {
                 style={{ color: moodColor, fontSize: 12, fontWeight: '500' }}>
                 {activeTrack.artist}
               </Text>
-              {/* Time stamps only â€” ring shows progress */}
+              {/* Time stamps only — ring shows progress */}
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5 }}>
                 <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 10, fontWeight: '600' }}>
                   {formatTime(position)}
                 </Text>
-                <Text style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10 }}>Â·</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10 }}>·</Text>
                 <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 10, fontWeight: '600' }}>
                   {duration > 0 ? `-${formatTime(duration - position)}` : '--:--'}
                 </Text>
@@ -2691,11 +2700,11 @@ export default function App() {
             onLayout={e => {
               const w = e.nativeEvent.layout.width;
               navBarWidthRef.current = w;
-              // Initial placement â€” jump to correct position without animation
+              // Initial placement — jump to correct position without animation
               navPillAnim.setValue(activeIdx * (w / 4));
             }}
           >
-            {/* Sliding pill â€” uses pixel-based translateX (safe in RN) */}
+            {/* Sliding pill — uses pixel-based translateX (safe in RN) */}
             <Animated.View
               pointerEvents="none"
               style={{
@@ -2723,7 +2732,7 @@ export default function App() {
         );
       })()}
 
-      {/* â”€â”€ MOVIE DETAIL SCREEN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── MOVIE DETAIL SCREEN ──────────────────────────────────────────────── */}
       <Modal
         animationType="slide"
         transparent={false}
@@ -2767,7 +2776,7 @@ export default function App() {
             )}
             <Text style={{ color: '#fff', fontSize: 20, fontWeight: '900', marginTop: 14, textAlign: 'center', paddingHorizontal: 24 }} numberOfLines={2}>{selectedMovie?.name}</Text>
             <Text style={{ color: moodColor, fontSize: 13, marginTop: 4 }}>
-              {selectedMovie?.year ? `${selectedMovie.year}  Â·  ` : ''}
+              {selectedMovie?.year ? `${selectedMovie.year}  ·  ` : ''}
               {movieSongs.length > 0 ? `${movieSongs.length} Songs` : 'Soundtrack'}
             </Text>
 
@@ -2790,7 +2799,7 @@ export default function App() {
             {isMovieSongsLoading ? (
               <View style={{ padding: 40, alignItems: 'center' }}>
                 <ActivityIndicator size="large" color={moodColor} />
-                <Text style={{ color: 'rgba(255,255,255,0.5)', marginTop: 12, fontSize: 14 }}>Loading songsâ€¦</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.5)', marginTop: 12, fontSize: 14 }}>Loading songs…</Text>
               </View>
             ) : movieSongs.length === 0 ? (
               <View style={{ padding: 40, alignItems: 'center' }}>
@@ -2861,12 +2870,12 @@ export default function App() {
         </View>
       </Modal>
 
-      {/* â”€â”€ FULL SCREEN PLAYER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── FULL SCREEN PLAYER ─────────────────────────────────────────────── */}
       <Modal animationType="slide" transparent={false} visible={isFullScreen} onRequestClose={() => setIsFullScreen(false)}>
         <View style={[styles.fullScreenContainer, { backgroundColor: isAmoled ? '#000000' : '#0d0d14', overflow: 'hidden' }]}>
-          {/* â”€â”€ Dominant colour bleeds from top, fades to black at bottom â”€â”€ */}
+          {/* ── Dominant colour bleeds from top, fades to black at bottom ── */}
           <LinearGradient
-            colors={[moodColor, '#000000', '#000000']}
+            colors={[extractedColor || moodColor, '#000000', '#000000']}
             locations={[0, 0.5, 1]}
             style={{ position: 'absolute', width: '100%', height: '100%' }}
           />
@@ -2883,7 +2892,7 @@ export default function App() {
               {currentMood !== 'default' && (
                 <View style={[styles.moodBadge, { backgroundColor: moodColor + '22', borderColor: moodColor + '55' }]}>
                   <Text style={[styles.moodBadgeText, { color: moodColor }]}>
-                    {currentMood === 'romantic' ? 'Romantic â¤ï¸' : currentMood === 'sad' ? 'Sad ðŸ˜¢' : currentMood === 'item' ? 'Party ðŸŽ‰' : currentMood === '90s' ? 'Retro ðŸŽ¶' : currentMood === 'bhajan' ? 'Devotional ðŸ™' : currentMood === 'energetic' ? 'Energetic âš¡' : ''}
+                    {currentMood === 'romantic' ? 'Romantic ❤️' : currentMood === 'sad' ? 'Sad 😢' : currentMood === 'item' ? 'Party 🎉' : currentMood === '90s' ? 'Retro 🎶' : currentMood === 'bhajan' ? 'Devotional 🙏' : currentMood === 'energetic' ? 'Energetic ⚡' : ''}
                   </Text>
                 </View>
               )}
@@ -2968,16 +2977,16 @@ export default function App() {
               {/* Download */}
               <TouchableOpacity
                 onPress={() => activeTrack && downloadSong(activeTrack)}
-                style={{ width: 56, height: 48, backgroundColor: '#ffffff', borderTopLeftRadius: 24, borderBottomLeftRadius: 24, borderTopRightRadius: 4, borderBottomRightRadius: 4, justifyContent: 'center', alignItems: 'center', marginRight: 2 }}>
-                <Ionicons name="arrow-down-outline" size={24} color="#000" />
+                style={{ width: 48, height: 42, backgroundColor: '#ffffff', borderTopLeftRadius: 21, borderBottomLeftRadius: 21, borderTopRightRadius: 4, borderBottomRightRadius: 4, justifyContent: 'center', alignItems: 'center', marginRight: 1.5 }}>
+                <Ionicons name="arrow-down-outline" size={20} color="#000" />
               </TouchableOpacity>
               {/* Favourite heart */}
               <TouchableOpacity
                 onPress={() => activeTrack && toggleFavorite(activeTrack)}
-                style={{ width: 56, height: 48, backgroundColor: '#ffffff', borderTopLeftRadius: 4, borderBottomLeftRadius: 4, borderTopRightRadius: 24, borderBottomRightRadius: 24, justifyContent: 'center', alignItems: 'center', marginLeft: 2 }}>
+                style={{ width: 48, height: 42, backgroundColor: '#ffffff', borderTopLeftRadius: 4, borderBottomLeftRadius: 4, borderTopRightRadius: 21, borderBottomRightRadius: 21, justifyContent: 'center', alignItems: 'center', marginLeft: 1.5 }}>
                 <Ionicons
                   name={activeTrack && isTrackFavorite(activeTrack.id) ? 'heart' : 'heart-outline'}
-                  size={24}
+                  size={20}
                   color={activeTrack && isTrackFavorite(activeTrack.id) ? '#ff3366' : '#000'}
                 />
               </TouchableOpacity>
@@ -3057,7 +3066,7 @@ export default function App() {
                 }}
                 style={{ flex: 1, paddingVertical: 7, borderRadius: 20, backgroundColor: playerTab === tab ? moodColor + '22' : 'transparent', borderWidth: 1, borderColor: playerTab === tab ? moodColor : '#333', alignItems: 'center' }}>
                 <Text style={{ color: playerTab === tab ? moodColor : '#555', fontSize: 11, fontWeight: '700' }}>
-                  {tab === 'queue' ? 'â™ª QUEUE' : tab === 'lyrics' ? 'ðŸ“ LYRICS' : 'ðŸŽ¯ RELATED'}
+                  {tab === 'queue' ? '♪ QUEUE' : tab === 'lyrics' ? '📝 LYRICS' : '🎯 RELATED'}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -3069,7 +3078,7 @@ export default function App() {
               <View style={styles.queueContainer}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
                   <Ionicons name="sparkles" size={14} color={moodColor} style={{ marginRight: 6 }} />
-                  <Text style={[styles.queueHeader, { color: moodColor }]}>Up Next â€” Smart Queue</Text>
+                  <Text style={[styles.queueHeader, { color: moodColor }]}>Up Next — Smart Queue</Text>
                 </View>
                 <ScrollView showsVerticalScrollIndicator={false}>
                   {autoplayQueue.map((s, i) => (
@@ -3214,21 +3223,21 @@ export default function App() {
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}>
 
-            {/* â”€â”€ Moods & moments â”€â”€ */}
+            {/* ── Moods & moments ── */}
             <Text style={{ color: moodColor, fontSize: 18, fontWeight: '800', fontStyle: 'italic', marginTop: 24, marginBottom: 14 }}>Moods &amp; moments</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
               {[
-                { label: 'Chill',     mood: 'chill',     emoji: 'ðŸ˜Œ' },
-                { label: 'Commute',   mood: 'commute',   emoji: 'ðŸšŒ' },
-                { label: 'Energize',  mood: 'energetic', emoji: 'âš¡' },
-                { label: 'Feel good', mood: 'happy',     emoji: 'ðŸ˜Š' },
-                { label: 'Focus',     mood: 'focus',     emoji: 'ðŸŽ¯' },
-                { label: 'Gaming',    mood: 'gaming',    emoji: 'ðŸŽ®' },
-                { label: 'Party',     mood: 'item',      emoji: 'ðŸŽ‰' },
-                { label: 'Romance',   mood: 'romantic',  emoji: 'â¤ï¸' },
-                { label: 'Sad',       mood: 'sad',       emoji: 'ðŸ˜¢' },
-                { label: 'Sleep',     mood: 'sleep',     emoji: 'ðŸ˜´' },
-                { label: 'Workout',   mood: 'workout',   emoji: 'ðŸ’ª' },
+                { label: 'Chill',     mood: 'chill',     emoji: '😌' },
+                { label: 'Commute',   mood: 'commute',   emoji: '🚌' },
+                { label: 'Energize',  mood: 'energetic', emoji: '⚡' },
+                { label: 'Feel good', mood: 'happy',     emoji: '😊' },
+                { label: 'Focus',     mood: 'focus',     emoji: '🎯' },
+                { label: 'Gaming',    mood: 'gaming',    emoji: '🎮' },
+                { label: 'Party',     mood: 'item',      emoji: '🎉' },
+                { label: 'Romance',   mood: 'romantic',  emoji: '❤️' },
+                { label: 'Sad',       mood: 'sad',       emoji: '😢' },
+                { label: 'Sleep',     mood: 'sleep',     emoji: '😴' },
+                { label: 'Workout',   mood: 'workout',   emoji: '💪' },
               ].map(m => (
                 <TouchableOpacity key={m.mood}
                   style={{ width: '47%', backgroundColor: '#ffffff0d', borderWidth: 1, borderColor: '#ffffff18', borderRadius: 14, paddingVertical: 18, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center' }}
@@ -3239,7 +3248,7 @@ export default function App() {
               ))}
             </View>
 
-            {/* â”€â”€ Genres â”€â”€ */}
+            {/* ── Genres ── */}
             <Text style={{ color: moodColor, fontSize: 18, fontWeight: '800', fontStyle: 'italic', marginTop: 32, marginBottom: 14 }}>Genres</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
               {[
@@ -3270,9 +3279,9 @@ export default function App() {
               <Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold', letterSpacing: 2 }}>EQUALIZER</Text>
             </View>
             {[
-              { label: 'ðŸ”Š Bass', value: eqBass, set: setEqBass },
-              { label: 'ðŸŽµ Mid', value: eqMid, set: setEqMid },
-              { label: 'ðŸ”† Treble', value: eqTreble, set: setEqTreble },
+              { label: '🔊 Bass', value: eqBass, set: setEqBass },
+              { label: '🎵 Mid', value: eqMid, set: setEqMid },
+              { label: '🔆 Treble', value: eqTreble, set: setEqTreble },
             ].map(eq => (
               <View key={eq.label} style={{ marginBottom: 22 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -3314,7 +3323,7 @@ export default function App() {
   );
 }
 
-// â”€â”€â”€ Styles â€” M3-Inspired Visual Refresh â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Styles — M3-Inspired Visual Refresh ─────────────────────────────────────
 const styles = StyleSheet.create({
   container:   { flex: 1, backgroundColor: '#0d0d14' },
   header:      { backgroundColor: '#0d0d14', paddingTop: 50, paddingBottom: 14, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
@@ -3349,7 +3358,7 @@ const styles = StyleSheet.create({
   historyItem:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 11, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' },
   historyItemText: { color: '#ccc', fontSize: 14, flex: 1 },
 
-  // Track card â€” M3 tonal surface
+  // Track card — M3 tonal surface
   trackCard:   { flexDirection: 'row', alignItems: 'center', padding: 10, marginBottom: 7, borderRadius: 16, borderWidth: 1 },
   trackInfo:   { flex: 1, marginRight: 4 },
   trackTitle:  { color: '#e6e1f5', fontSize: 14, fontWeight: '600', marginBottom: 2 },
@@ -3364,9 +3373,9 @@ const styles = StyleSheet.create({
   playlistListItem:{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
 
   sectionHeader:  { color: '#e6e1f5', fontSize: 14, fontWeight: '700', letterSpacing: 0.5, marginBottom: 14 },
-  // Echo Music section label â€” bold italic, like JioSaavn
+  // Echo Music section label — bold italic, like JioSaavn
   echoSectionLabel: { color: '#e6e1f5', fontSize: 16, fontWeight: '800', fontStyle: 'italic', marginBottom: 14 },
-  // Top result card â€” wide with thick border
+  // Top result card — wide with thick border
   topResultCard:  { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 18, borderWidth: 1.5, marginBottom: 16 },
   // Generic search result row (albums, artists)
   searchResultRow:{ flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 16, marginBottom: 8 },
@@ -3382,14 +3391,14 @@ const styles = StyleSheet.create({
   statNumber:     { color: '#00ffcc', fontSize: 22, fontWeight: 'bold' },
   statLabel:      { color: '#9896a8', fontSize: 11 },
 
-  // Mini player â€” rounded rectangle floating above bottom nav
+  // Mini player — rounded rectangle floating above bottom nav
   miniPlayer:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10 },
   miniPlayerLeft:    { flex: 1, flexDirection: 'row', alignItems: 'center', overflow: 'hidden', marginRight: 8 },
   miniPlayerTitle:   { fontSize: 14, fontWeight: '600', marginBottom: 1, color: '#e6e1f5' },
   miniPlayerArtist:  { fontSize: 12, color: '#9896a8' },
   miniPlayerPlayBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
 
-  // Bottom nav â€” M3 NavigationBar
+  // Bottom nav — M3 NavigationBar
   bottomNav:   { flexDirection: 'row', borderTopWidth: 1, paddingBottom: Platform.OS === 'ios' ? 40 : 25, paddingTop: 4 },
   navButton:   { flex: 1, alignItems: 'center', paddingVertical: 10, zIndex: 1 },
   navText:     { fontSize: 10, fontWeight: '600', marginTop: 2 },
@@ -3398,18 +3407,18 @@ const styles = StyleSheet.create({
   modalOverlay:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   modalContent:  { width: '100%', backgroundColor: '#16161f', borderRadius: 24, padding: 24, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
 
-  // â”€â”€ Full screen player â”€â”€
+  // ── Full screen player ──
   fullScreenContainer:  { flex: 1, paddingTop: Platform.OS === 'ios' ? 50 : 32 },
   fullScreenHeader:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 12, marginBottom: 8 },
   fullScreenHeaderText: { color: 'rgba(255,255,255,0.55)', fontSize: 11, fontWeight: '700', letterSpacing: 2.5, textTransform: 'uppercase' },
   moodBadge:            { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, borderWidth: 1, marginTop: 4 },
   moodBadgeText:        { fontSize: 11, fontWeight: '700' },
 
-  // Album art area â€” bigger thumbnail as per user request
+  // Album art area — bigger thumbnail as per user request
   animationContainer:   { alignItems: 'center', justifyContent: 'center', height: 340, marginVertical: 4 },
   breathingShadow:      { position: 'absolute', width: 302, height: 302, borderRadius: 151 },
   rippleRing:           { position: 'absolute', width: 302, height: 302, borderRadius: 151, borderWidth: 1.5 },
-  // [VISUAL] Vinyl disc outer ring (rotates) â€” bigger
+  // [VISUAL] Vinyl disc outer ring (rotates) — bigger
   vinylOuter:           { position: 'absolute', width: 318, height: 318, borderRadius: 159, borderWidth: 3, borderStyle: 'dashed' },
   albumArtLarge:        { width: 290, height: 290, borderRadius: 28, overflow: 'hidden', backgroundColor: '#1e1e2a', justifyContent: 'center', alignItems: 'center', elevation: 16, shadowColor: '#000', shadowOpacity: 0.6, shadowRadius: 20, shadowOffset: { width: 0, height: 10 } },
   albumImage:           { width: 290, height: 290 },
@@ -3420,7 +3429,7 @@ const styles = StyleSheet.create({
   fullScreenArtist:     { fontSize: 14, fontWeight: '600', letterSpacing: 0.5 },
   autoplayReasonText:   { fontSize: 11, marginTop: 4 },
 
-  // Progress bar â€” M3 style
+  // Progress bar — M3 style
   sliderSection:        { paddingHorizontal: 28, marginBottom: 6 },
   progressBarBg:        { height: 5, backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 3, overflow: 'visible' },
   progressBarFill:      { height: 5, borderRadius: 3 },
