@@ -75,7 +75,9 @@ export default function App() {
   const [confirmPassword, setConfirmPassword] = useState('');
 
   // ── Navigation ──
-  const [currentScreen, setCurrentScreen] = useState('all_songs');
+  const [currentScreen, setCurrentScreen] = useState<'all_songs' | 'library' | 'downloads' | 'settings' | 'playlist_view' | 'listen_later' | 'artist_profile' | 'album_view'>('all_songs');
+  const [selectedAlbum, setSelectedAlbum] = useState<any>(null);
+  const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
 
   // ── User data ──
   const [favorites,  setFavorites]  = useState<any[]>([]);
@@ -689,11 +691,39 @@ export default function App() {
     return () => sub.remove();
   }, []);
 
-  // ─── Search debounce ─────────────────────────────────────────────────────────
+  // ─── Search debounce & Suggestions ─────────────────────────────────────────────
+  const fetchSuggestions = async (query: string) => {
+    if (!query.trim()) { setSearchSuggestions([]); return; }
+    try {
+      const resp = await fetch(`${BACKEND_URL}/api/suggest?query=${encodeURIComponent(query)}`);
+      const json = await resp.json();
+      if (json.success) setSearchSuggestions(json.data || []);
+    } catch {}
+  };
+
+  const openAlbumView = async (albumBase: any) => {
+    setIsSearching(true);
+    try {
+      const r = await fetch(`https://saavn.dev/api/albums?id=${albumBase.id}`);
+      const albumData = await r.json();
+      if (albumData.success && albumData.data) {
+        setSelectedAlbum(albumData.data);
+        setCurrentScreen('album_view');
+      }
+    } catch {
+      showAlert('Error', 'Could not load album details');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   useEffect(() => {
-    if (searchQuery.trim().length === 0) { setSongsList([]); setAlbumResults([]); setExpandedAlbumId(null); return; }
+    if (searchQuery.trim().length === 0) { setSongsList([]); setAlbumResults([]); setExpandedAlbumId(null); setSearchSuggestions([]); return; }
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    typingTimeoutRef.current = setTimeout(() => fetchLiveTracks(searchQuery), 500);
+    typingTimeoutRef.current = setTimeout(() => {
+      fetchLiveTracks(searchQuery);
+      fetchSuggestions(searchQuery);
+    }, 400);
     return () => clearTimeout(typingTimeoutRef.current);
   }, [searchQuery]);
 
@@ -1472,6 +1502,7 @@ export default function App() {
       const pl = playlists.find(p => p.id === activePlaylistId);
       return pl ? pl.songs : [];
     }
+    if (currentScreen === 'album_view' && selectedAlbum) return selectedAlbum.songs || [];
     return songsList;
   };
 
@@ -1903,17 +1934,17 @@ export default function App() {
                   )}
 
                   {/* SECTION 2: Suggestions from live results (Echo Music style) */}
-                  {isSearchFocused && songsList.length > 0 && (
+                  {isSearchFocused && searchSuggestions.length > 0 && (
                     <View style={{ backgroundColor: theme.card, borderRadius: 16, marginBottom: 10, overflow: 'hidden', borderWidth: 1, borderColor: theme.border }}>
                       <Text style={{ color: moodColor, fontSize: 12, fontWeight: '800', letterSpacing: 1, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 6, textTransform: 'uppercase' }}>Suggestions</Text>
-                      {songsList.slice(0, 5).map((song: any, i: number) => (
+                      {searchSuggestions.slice(0, 8).map((suggestion: string, i: number) => (
                         <TouchableOpacity key={i}
                           style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1, borderTopColor: theme.border + '33' }}
-                          onPress={() => { setSearchQuery(song.title); setIsSearchFocused(false); }}>
+                          onPress={() => { setSearchQuery(suggestion); setIsSearchFocused(false); }}>
                           <Ionicons name="search" size={16} color={theme.subtext} style={{ marginRight: 14 }} />
-                          <Text style={{ flex: 1, color: theme.text, fontSize: 14 }}>{song.title}</Text>
-                          <TouchableOpacity onPress={() => setSearchQuery(song.title)} hitSlop={{ top:10,bottom:10,left:10,right:10 }}>
-                            <Ionicons name="arrow-up-outline" size={16} color={theme.subtext} style={{ transform: [{ rotate: '45deg' }] }} />
+                          <Text style={{ flex: 1, color: theme.text, fontSize: 14 }}>{suggestion}</Text>
+                          <TouchableOpacity onPress={() => setSearchQuery(suggestion)} hitSlop={{ top:10,bottom:10,left:10,right:10 }}>
+                            <Ionicons name="arrow-up-outline" size={16} color={theme.subtext} style={{ transform: [{ rotate: '-45deg' }] }} />
                           </TouchableOpacity>
                         </TouchableOpacity>
                       ))}
@@ -1948,7 +1979,7 @@ export default function App() {
                       {albumResults.map(album => (
                         <TouchableOpacity key={album.id}
                           style={[styles.searchResultRow, { backgroundColor: theme.card }]}
-                          onPress={() => setExpandedAlbumId(expandedAlbumId === album.id ? null : album.id)}>
+                          onPress={() => { setIsSearchFocused(false); openAlbumView(album); }}>
                           <View style={{ width: 52, height: 52, borderRadius: 10, overflow: 'hidden', backgroundColor: theme.surface, marginRight: 14 }}>
                             {album.image ? <Image source={{ uri: album.image }} style={{ width: 52, height: 52 }} /> : <Ionicons name="albums-outline" size={26} color={moodColor} />}
                           </View>
@@ -2114,7 +2145,7 @@ export default function App() {
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                   <Text style={styles.echoSectionLabel}>Moods &amp; Genres</Text>
                   <TouchableOpacity onPress={() => setShowMoodGenres(true)} hitSlop={{ top:10,bottom:10,left:10,right:10 }}>
-                    <Text style={{ color: moodColor, fontSize: 13, fontWeight: '700' }}>See all  &gt;&gt;</Text>
+                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800', backgroundColor: moodColor, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, overflow: 'hidden' }}>SEE ALL</Text>
                   </TouchableOpacity>
                 </View>
                 <Text style={{ color: theme.subtext, fontSize: 11, fontStyle: 'italic', marginBottom: 12 }}>PICK YOUR VIBE FOR TODAY</Text>
@@ -2272,6 +2303,60 @@ export default function App() {
                 <View style={{ height: 20 }} />
               </ScrollView>
             )}
+          </View>
+        )}
+
+        {/* ── ALBUM VIEW (Full Screen) ─────────────────────────────────────── */}
+        {currentScreen === 'album_view' && selectedAlbum && (
+          <View style={[styles.screenBody, { padding: 0 }]}>
+            {/* Immersive Header */}
+            <View style={{ height: 350, width: '100%', position: 'relative' }}>
+              {selectedAlbum.image && (
+                <Image source={{ uri: selectedAlbum.image[2]?.url || selectedAlbum.image[1]?.url || selectedAlbum.image[0]?.url || selectedAlbum.image }} style={{ width: '100%', height: '100%', position: 'absolute' }} blurRadius={10} />
+              )}
+              <LinearGradient colors={['transparent', theme.bg]} style={{ width: '100%', height: '100%', position: 'absolute', bottom: 0 }} />
+              <TouchableOpacity onPress={() => setCurrentScreen('all_songs')} style={{ position: 'absolute', top: 40, left: 20, width: 40, height: 40, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 20, justifyContent: 'center', alignItems: 'center', zIndex: 10 }}>
+                <Ionicons name="arrow-back" size={24} color="#fff" />
+              </TouchableOpacity>
+              <View style={{ position: 'absolute', bottom: 20, left: 20, right: 20, alignItems: 'center' }}>
+                {selectedAlbum.image && (
+                  <View style={{ elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.5, shadowRadius: 10, marginBottom: 15, borderRadius: 10 }}>
+                    <Image source={{ uri: selectedAlbum.image[2]?.url || selectedAlbum.image[1]?.url || selectedAlbum.image[0]?.url || selectedAlbum.image }} style={{ width: 160, height: 160, borderRadius: 10 }} />
+                  </View>
+                )}
+                <Text style={{ color: '#fff', fontSize: 28, fontWeight: 'bold', textAlign: 'center' }}>{selectedAlbum.name || selectedAlbum.title}</Text>
+                <Text style={{ color: '#aaa', fontSize: 13, marginTop: 5, textAlign: 'center' }}>{selectedAlbum.primaryArtists || 'Various Artists'} • {selectedAlbum.year || ''} • {selectedAlbum.songs?.length || 0} Tracks</Text>
+              </View>
+            </View>
+
+            <View style={{ paddingHorizontal: 20, marginTop: 10, marginBottom: 20, flexDirection: 'row', justifyContent: 'center' }}>
+              <TouchableOpacity
+                onPress={() => {
+                  if (selectedAlbum.songs?.length > 0) {
+                    handleTrackPress(selectedAlbum.songs[0]);
+                  }
+                }}
+                style={{ backgroundColor: moodColor, width: 200, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', flexDirection: 'row', elevation: 5 }}>
+                <Ionicons name="play" size={22} color="#050515" style={{ marginRight: 8 }} />
+                <Text style={{ color: '#050515', fontSize: 16, fontWeight: 'bold' }}>Play All</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 150 }} showsVerticalScrollIndicator={false}>
+              {selectedAlbum.songs?.map((song: any, index: number) => (
+                <TouchableOpacity key={index} style={[styles.searchResultRow, { backgroundColor: activeTrack?.id === song.id ? moodColor + '11' : theme.card }]} onPress={() => handleTrackPress(song)}>
+                  <View style={{ width: 45, height: 45, borderRadius: 8, overflow: 'hidden', marginRight: 12, backgroundColor: theme.surface }}>
+                    {song.image ? <Image source={{ uri: song.image[1]?.url || song.image[0]?.url || song.image }} style={{ width: 45, height: 45 }} /> : <Ionicons name="musical-notes" size={24} color={moodColor} />}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text numberOfLines={1} style={{ color: activeTrack?.id === song.id ? moodColor : theme.text, fontSize: 15, fontWeight: '600' }}>{song.title || song.name}</Text>
+                    <Text numberOfLines={1} style={{ color: theme.subtext, fontSize: 12, marginTop: 2 }}>{song.primaryArtists || song.artist || 'Unknown'}</Text>
+                  </View>
+                  {activeTrack?.id === song.id && <Ionicons name="stats-chart" size={16} color={moodColor} />}
+                  <Ionicons name="ellipsis-vertical" size={18} color={theme.subtext} style={{ marginLeft: 10 }} />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
         )}
         {currentScreen === 'artist_profile' && (
@@ -2601,7 +2686,10 @@ export default function App() {
               {/* [NEW] Skip Intro / Outro */}
               <View style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card, flexDirection: 'column', alignItems: 'flex-start' }]}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%', alignItems: 'center', marginBottom: 10 }}>
-                  <Text style={[styles.settingTitle, { color: theme.text }]}>Skip Intro</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Ionicons name="play-skip-forward" size={20} color={moodColor} style={{ marginRight: 10 }} />
+                    <Text style={[styles.settingTitle, { color: theme.text, fontWeight: '800', fontSize: 16 }]}>Skip Intro</Text>
+                  </View>
                   <Switch value={skipIntroEnabled} onValueChange={(v) => { setSkipIntroEnabled(v); AsyncStorage.setItem('skipIntroEnabled', String(v)); }} trackColor={{ false: '#252545', true: moodColor }} thumbColor="#ffffff" />
                 </View>
                 {skipIntroEnabled && (
@@ -2842,7 +2930,7 @@ export default function App() {
               return (
                 <TouchableOpacity key={tab.screen} style={styles.navButton} onPress={() => {
                   if (tab.screen === 'all_songs') { setSearchQuery(''); setIsSearchFocused(false); setIsArtistMode(false); }
-                  setCurrentScreen(tab.screen);
+                  setCurrentScreen(tab.screen as any);
                 }}>
                   <Ionicons name={(active ? tab.iconFilled : tab.icon) as any} size={22} color={active ? moodColor : theme.subtext} />
                   <Text style={[styles.navText, { color: active ? moodColor : theme.subtext, fontWeight: active ? '700' : '500' }]}>{tab.label}</Text>
@@ -3595,7 +3683,7 @@ const styles = StyleSheet.create({
   eyeBtn:          { position: 'absolute', right: 15, height: 55, justifyContent: 'center' },
 
   // Search
-  searchBox:   { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e1e2a', borderRadius: 16, paddingHorizontal: 16, marginBottom: 14, marginTop: -28, height: 50, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
+  searchBox:   { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e1e2a', borderRadius: 16, paddingHorizontal: 16, marginBottom: 14, marginTop: -42, height: 50, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
   input:       { flex: 1, color: '#e6e1f5', fontSize: 15 },
 
   // History
