@@ -114,6 +114,8 @@ MOOD_REASONS = {
 }
 
 
+import re
+
 def detect_mood(title: str, artist: str) -> str:
     """Detect the mood/genre of a song from its title and artist name."""
     text = (title + " " + artist).lower()
@@ -121,7 +123,7 @@ def detect_mood(title: str, artist: str) -> str:
     scores = {mood: 0 for mood in MOOD_KEYWORDS}
     for mood, keywords in MOOD_KEYWORDS.items():
         for keyword in keywords:
-            if keyword in text:
+            if re.search(r'\b' + re.escape(keyword) + r'\b', text):
                 scores[mood] += 1
 
     best_mood = max(scores, key=scores.get)
