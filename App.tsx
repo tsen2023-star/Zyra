@@ -546,28 +546,7 @@ export default function App() {
       finally { setIsAppReady(true); }
     };
     init();
-    // ── Restore last played track on app reopen ──
-    AsyncStorage.getItem('lastActiveTrack').then(async (raw) => {
-      if (!raw) return;
-      try {
-        const saved = JSON.parse(raw);
-        if (saved?.id && saved?.url) {
-          // 1. Restore to TrackPlayer
-          await TrackPlayer.reset();
-          await TrackPlayer.add({
-            id: saved.id, url: saved.url,
-            title: saved.title || '', artist: saved.artist || '',
-            artwork: saved.image || '', duration: saved.duration || 0,
-          });
-          // 2. Restore position
-          const savedPos = await AsyncStorage.getItem('lastPosition_' + saved.id);
-          if (savedPos) await TrackPlayer.seekTo(parseFloat(savedPos));
-          // 3. SET activeTrack so mini player shows up (paused)
-          setActiveTrack(saved);
-          // 4. Do NOT auto-play — user will tap play
-        }
-      } catch {}
-    });
+
     const keepAlive = setInterval(() => {
       fetch(`${BACKEND_URL}/ping`).catch(() => {});
     }, 4 * 60 * 1000);
@@ -1064,6 +1043,45 @@ export default function App() {
     const ae = encodeURIComponent(song.artist || '');
     return `${BACKEND_URL}/api/stream?id=${song.id}&title=${te}&artist=${ae}`;
   }, [downloads, audioQuality]);
+
+  // ─── Restore last played track on app reopen ─────────────────────────────────
+  const hasRestoredTrackRef = useRef(false);
+  useEffect(() => {
+    if (hasRestoredTrackRef.current) return;
+    hasRestoredTrackRef.current = true;
+
+    AsyncStorage.getItem('lastActiveTrack').then(async (raw) => {
+      if (!raw) return;
+      try {
+        const saved = JSON.parse(raw);
+        if (saved?.id) {
+          // 1. SET activeTrack so mini player shows up
+          setActiveTrack(saved);
+
+          // 2. Fetch fresh streaming url
+          const streamUrl = await resolveStreamUrl(saved);
+
+          // 3. Restore to TrackPlayer
+          await TrackPlayer.reset();
+          trackMetaRef.current.clear();
+          trackMetaRef.current.set(String(saved.id), saved);
+          await TrackPlayer.add({
+            id: String(saved.id), url: streamUrl,
+            title: saved.title || '', artist: saved.artist || '',
+            artwork: saved.image || '', duration: saved.duration || 0,
+          });
+
+          // 4. Restore position
+          const savedPos = await AsyncStorage.getItem('lastPosition_' + saved.id);
+          if (savedPos && parseFloat(savedPos) > 5) {
+             await TrackPlayer.seekTo(parseFloat(savedPos));
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to restore track", e);
+      }
+    });
+  }, [resolveStreamUrl]);
 
   // ─── Add songs to RNTP queue ──────────────────────────────────────────────────
   const addSongsToQueue = useCallback(async (songs: any[], limitN = 5) => {
