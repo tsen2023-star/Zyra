@@ -1142,9 +1142,8 @@ def delete_download(user, song_id):
 @user_required
 def update_settings(user):
     data     = request.get_json() or {}
-    settings = user.get('settings') or {'shake_enabled': False, 'smart_autoplay': True, 'flip_enabled': False}
+    settings = user.get('settings') or {'shake_enabled': False, 'smart_autoplay': True}
     if 'shake_enabled'  in data: settings['shake_enabled']  = bool(data['shake_enabled'])
-    if 'flip_enabled'   in data: settings['flip_enabled']   = bool(data['flip_enabled'])
     if 'smart_autoplay' in data: settings['smart_autoplay'] = bool(data['smart_autoplay'])
     db_update_user(user['id'], settings=_json.dumps(settings))
     return jsonify({'success': True, 'data': {'settings': settings}})
