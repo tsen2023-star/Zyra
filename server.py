@@ -1227,6 +1227,31 @@ def recommendations_queue():
 
 # ─── JioSaavn Music Routes ────────────────────────────────────────────────────
 
+@app.route('/api/suggest', methods=['GET'])
+def suggest():
+    query = request.args.get('query', '').strip()
+    if not query:
+        return jsonify({'success': True, 'data': []})
+    try:
+        import urllib.parse
+        url = f"https://www.jiosaavn.com/api.php?__call=autocomplete.get&query={urllib.parse.quote(query)}&_format=json&_marker=0&ctx=android"
+        r = http_requests.get(url, timeout=5)
+        data = r.json()
+        suggestions = []
+        for k in ['topquery', 'songs', 'albums', 'artists']:
+            items = data.get(k, {}).get('data', [])
+            for item in items:
+                title = item.get('title', '')
+                title = html.unescape(title)
+                # Remove html tags
+                title = _re.sub(r'<[^>]+>', '', title)
+                if title and title not in suggestions:
+                    suggestions.append(title)
+        return jsonify({'success': True, 'data': suggestions[:10]})
+    except Exception as e:
+        print("Suggest error:", e)
+        return jsonify({'success': True, 'data': []})
+
 @app.route('/api/search', methods=['GET'])
 def search():
     """Search songs via saavn.dev → JioSaavn fallback → YouTube. Also returns albums for movie searches."""
