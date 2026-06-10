@@ -302,9 +302,14 @@ export default function App() {
   // ─── Mini player swipe-up PanResponder ───────────────────────────────────────
   const miniPlayerPan = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_, g) => g.dy < -12 && Math.abs(g.dy) > Math.abs(g.dx),
-      onPanResponderRelease: (_, g) => {
-        if (g.dy < -40) setIsFullScreen(true);
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 12 && Math.abs(g.dy) > Math.abs(g.dx),
+      onPanResponderRelease: async (_, g) => {
+        if (g.dy < -40) {
+          setIsFullScreen(true);
+        } else if (g.dy > 40) {
+          await TrackPlayer.pause();
+          setActiveTrack(null);
+        }
       },
     })
   ).current;
