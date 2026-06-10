@@ -877,7 +877,7 @@ def send_otp_email(to_email: str, otp: str) -> bool:
 
 Your Zyra Music password reset OTP is:
 
-  {otp}
+    {otp}
 
 This code expires in 10 minutes.
 If you did not request this, please ignore this email.
@@ -1053,6 +1053,18 @@ def delete_playlist(user, playlist_id):
     db_update_user(user['id'], playlists=_json.dumps(playlists))
     return jsonify({'success': True, 'data': {'playlists': playlists}})
 
+
+@app.route('/api/user/playlists/<playlist_id>/songs/<song_id>', methods=['DELETE'])
+@user_required
+def remove_song_from_playlist(user, playlist_id, song_id):
+    """Remove a single song from a playlist by song_id."""
+    playlists = user.get('playlists') or []
+    for pl in playlists:
+        if pl['id'] == playlist_id:
+            pl['songs'] = [s for s in pl.get('songs', []) if str(s.get('id', '')) != str(song_id)]
+            break
+    db_update_user(user['id'], playlists=_json.dumps(playlists))
+    return jsonify({'success': True, 'data': {'playlists': playlists}})
 
 @app.route('/api/user/history', methods=['GET'])
 @user_required
@@ -1291,7 +1303,7 @@ TOP_BOLLYWOOD_ARTISTS = [
     {'name': 'Udit Narayan',      'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c2/Udit_narayan.jpg/440px-Udit_narayan.jpg'},
     {'name': 'Lata Mangeshkar',   'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/Lata_Mangeshkar_in_2019.jpg/440px-Lata_Mangeshkar_in_2019.jpg'},
     {'name': 'Kishore Kumar',     'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8b/Kishore_Kumar_1985.jpg/440px-Kishore_Kumar_1985.jpg'},
-    {'name': 'Alka Yagnik',       'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/19/Alka_Yagnik.jpg/440px-Alka_Yagnik.jpg'},
+    {'name': 'Shreya Ghoshal',       'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/19/Shreya_Ghoshal.jpg/440px-Shreya_Ghoshal.jpg'},
     {'name': 'Badshah',           'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Badshah_at_Global_Citizen_Festival_2016.jpg/440px-Badshah_at_Global_Citizen_Festival_2016.jpg'},
     {'name': 'Diljit Dosanjh',    'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Diljit_Dosanjh_2019.jpg/440px-Diljit_Dosanjh_2019.jpg'},
     {'name': 'Armaan Malik',      'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8b/Armaan_Malik_in_2017.jpg/440px-Armaan_Malik_in_2017.jpg'},
