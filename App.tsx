@@ -1193,12 +1193,13 @@ export default function App() {
     const lines = lrcText.split('\n');
     const result: {time:number,text:string}[] = [];
     for (const line of lines) {
-      const match = line.match(/\[(\d+):(\d+)(?:\.\d+)?\](.*)/);
+      const match = line.match(/\[(\d+):(\d+)(?:\.(\d+))?\](.*)/);
       if (match) {
         const minutes = parseInt(match[1]);
         const seconds = parseInt(match[2]);
-        const text    = match[3].trim();
-        if (text) result.push({ time: minutes * 60 + seconds, text });
+        const fraction = match[3] ? parseFloat('0.' + match[3]) : 0;
+        const text    = match[4].trim();
+        if (text) result.push({ time: minutes * 60 + seconds + fraction, text });
       }
     }
     return result.sort((a, b) => a.time - b.time);
