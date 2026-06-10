@@ -11,7 +11,6 @@ import TrackPlayer, {
   usePlaybackState, useProgress, useTrackPlayerEvents, RepeatMode,
 } from 'react-native-track-player';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import { Accelerometer } from 'expo-sensors';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -232,10 +231,6 @@ export default function App() {
   const [relatedSongs,   setRelatedSongs]   = useState<any[]>([]);
   const [relatedLoading, setRelatedLoading] = useState(false);
   const [playerTab, setPlayerTab] = useState<'queue'|'lyrics'|'related'>('queue');
-
-  // ── [NEW] Skip Intro ──
-  const [skipIntroEnabled, setSkipIntroEnabled] = useState(false);
-  const [introSeconds,     setIntroSeconds]     = useState(15);
 
   // ── [NEW] Seek Indicator (swipe gesture feedback) ──
   const [seekIndicator, setSeekIndicator] = useState('');
@@ -1359,7 +1354,7 @@ export default function App() {
           return text.length > 20 && !isHindi(text);
         });
         if (validEntry) {
-          const lrcText = validEntry.syncedLyrics || entry.plainLyrics || '';
+          const lrcText = validEntry.syncedLyrics || validEntry.plainLyrics || '';
           setLyrics(lrcText);
           const parsed = parseLRC(lrcText);
           if (parsed.length > 0) setParsedLyrics(parsed);
