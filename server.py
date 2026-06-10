@@ -1303,7 +1303,7 @@ TOP_BOLLYWOOD_ARTISTS = [
     {'name': 'Udit Narayan',      'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c2/Udit_narayan.jpg/440px-Udit_narayan.jpg'},
     {'name': 'Lata Mangeshkar',   'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/Lata_Mangeshkar_in_2019.jpg/440px-Lata_Mangeshkar_in_2019.jpg'},
     {'name': 'Kishore Kumar',     'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8b/Kishore_Kumar_1985.jpg/440px-Kishore_Kumar_1985.jpg'},
-    {'name': 'Shreya Ghoshal',       'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/19/Shreya_Ghoshal.jpg/440px-Shreya_Ghoshal.jpg'},
+    {'name': 'Asha Bhosle',       'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/Asha_Bhosle_at_the_launch_of_her_first_acting_venture_Mai.jpg/440px-Asha_Bhosle_at_the_launch_of_her_first_acting_venture_Mai.jpg'},
     {'name': 'Badshah',           'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Badshah_at_Global_Citizen_Festival_2016.jpg/440px-Badshah_at_Global_Citizen_Festival_2016.jpg'},
     {'name': 'Diljit Dosanjh',    'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Diljit_Dosanjh_2019.jpg/440px-Diljit_Dosanjh_2019.jpg'},
     {'name': 'Armaan Malik',      'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8b/Armaan_Malik_in_2017.jpg/440px-Armaan_Malik_in_2017.jpg'},
@@ -1312,6 +1312,7 @@ TOP_BOLLYWOOD_ARTISTS = [
     {'name': 'Sunidhi Chauhan',   'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Sunidhi_Chauhan.jpg/440px-Sunidhi_Chauhan.jpg'},
     {'name': 'Darshan Raval',     'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a0/Darshan_Raval_2019.jpg/440px-Darshan_Raval_2019.jpg'},
     {'name': 'Yo Yo Honey Singh', 'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a1/Honey_Singh_at_BIG_Star_Entertainment_Awards.jpg/440px-Honey_Singh_at_BIG_Star_Entertainment_Awards.jpg'},
+    {'name': 'K.K.',              'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8d/KK_in_2016.jpg/440px-KK_in_2016.jpg'},
 ]
 
 
