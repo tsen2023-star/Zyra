@@ -381,7 +381,7 @@ export default function App() {
   const startShake = useCallback(() => {
     if (shakeSubRef.current) { shakeSubRef.current.remove(); shakeSubRef.current = null; }
     if (!shakeEnabledRef.current) return;
-    const THRESHOLD = Platform.OS === 'ios' ? 1.6 : 16;
+    const THRESHOLD = 3.0;
     Accelerometer.setUpdateInterval(60); // faster poll
     shakeSubRef.current = Accelerometer.addListener(({ x, y, z }) => {
       if (!shakeEnabledRef.current) return;
@@ -395,7 +395,7 @@ export default function App() {
       if (isAbove && !shakeAboveRef.current) {
         shakeCountRef.current += 1;
         lastShakeTsRef.current = now;
-        if (shakeCountRef.current >= 6) {
+        if (shakeCountRef.current >= 4) {
           shakeCountRef.current = 0;
           shakeAboveRef.current = false;
           if (handleShakeNextRef.current) handleShakeNextRef.current();
