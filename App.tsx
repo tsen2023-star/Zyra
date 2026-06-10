@@ -2068,7 +2068,7 @@ export default function App() {
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                   <Text style={styles.echoSectionLabel}>Moods &amp; Genres</Text>
                   <TouchableOpacity onPress={() => setShowMoodGenres(true)} hitSlop={{ top:10,bottom:10,left:10,right:10 }}>
-                    <Text style={{ color: moodColor, fontSize: 13, fontWeight: '700' }}>See all ➔</Text>
+                    <Text style={{ color: moodColor, fontSize: 13, fontWeight: '700' }}>See all  &gt;&gt;</Text>
                   </TouchableOpacity>
                 </View>
                 <Text style={{ color: theme.subtext, fontSize: 11, fontStyle: 'italic', marginBottom: 12 }}>PICK YOUR VIBE FOR TODAY</Text>
@@ -2338,9 +2338,10 @@ export default function App() {
                 </View>
                 {pl.songs.length > 0 && (
                   <TouchableOpacity
-                    style={{ backgroundColor: moodColor, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 }}
+                    style={{ backgroundColor: moodColor, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}
                     onPress={() => { setSongsList(pl.songs); handleTrackPress(pl.songs[0]); }}>
-                    <Text style={{ color: '#000', fontWeight: '800', fontSize: 13 }}>▶ Play All</Text>
+                    <Ionicons name="play" size={14} color="#000" />
+                    <Text style={{ color: '#000', fontWeight: '800', fontSize: 13 }}>Play All</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -2529,7 +2530,7 @@ export default function App() {
               {/* [NEW] Skip Intro / Outro */}
               <View style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card, flexDirection: 'column', alignItems: 'flex-start' }]}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%', alignItems: 'center', marginBottom: 10 }}>
-                  <Text style={[styles.settingTitle, { color: theme.text }]}>⏭ Skip Intro</Text>
+                  <Text style={[styles.settingTitle, { color: theme.text }]}>Skip Intro</Text>
                   <Switch value={skipIntroEnabled} onValueChange={(v) => { setSkipIntroEnabled(v); AsyncStorage.setItem('skipIntroEnabled', String(v)); }} trackColor={{ false: '#252545', true: moodColor }} thumbColor="#ffffff" />
                 </View>
                 {skipIntroEnabled && (
@@ -3484,7 +3485,7 @@ const styles = StyleSheet.create({
   eyeBtn:          { position: 'absolute', right: 15, height: 55, justifyContent: 'center' },
 
   // Search
-  searchBox:   { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e1e2a', borderRadius: 16, paddingHorizontal: 16, marginBottom: 14, height: 50, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
+  searchBox:   { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e1e2a', borderRadius: 16, paddingHorizontal: 16, marginBottom: 14, marginTop: -28, height: 50, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
   input:       { flex: 1, color: '#e6e1f5', fontSize: 15 },
 
   // History
