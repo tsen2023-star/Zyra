@@ -19,6 +19,7 @@
     },
     "android": {
       "package": "com.babulu2006.zyramusic",
+      "versionCode": 2,
       "permissions": [
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
