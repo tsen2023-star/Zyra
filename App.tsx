@@ -2054,8 +2054,8 @@ export default function App() {
                 {/* ── Moods & Genres — 3-column grid ── */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                   <Text style={styles.echoSectionLabel}>Moods &amp; Genres</Text>
-                  <TouchableOpacity onPress={() => setShowMoodGenres(true)}>
-                    <Text style={{ color: moodColor, fontSize: 13, fontWeight: '700' }}>See all →</Text>
+                  <TouchableOpacity onPress={() => setShowMoodGenres(true)} hitSlop={{ top:10,bottom:10,left:10,right:10 }}>
+                    <Text style={{ color: moodColor, fontSize: 13, fontWeight: '700' }}>See all ➔</Text>
                   </TouchableOpacity>
                 </View>
                 <Text style={{ color: theme.subtext, fontSize: 11, fontStyle: 'italic', marginBottom: 12 }}>PICK YOUR VIBE FOR TODAY</Text>
@@ -2080,28 +2080,41 @@ export default function App() {
                         setCurrentMood(g.mood);
                         setShowMoodGenres(true);
                         setIsSearching(true);
+                        setSearchQuery(g.label + ' Playlist');
                         try {
-                          const queries = [
-                            `${g.mood} songs`, `best ${g.mood} hindi songs`,
-                            `${g.label} songs hindi`, `top ${g.label} bollywood`,
-                          ];
-                          let all: any[] = [];
-                          await Promise.all(queries.map(async (q) => {
-                            try {
-                              const r = await fetch(`https://saavn.dev/api/search/songs?query=${encodeURIComponent(q)}&limit=25`);
-                              const j = await r.json();
-                              if (j.success && j.data?.results) all = [...all, ...j.data.results];
-                            } catch {}
-                          }));
-                          // deduplicate by id
-                          const seen = new Set<string>();
-                          const deduped = all.filter(s => { if (seen.has(s.id)) return false; seen.add(s.id); return true; });
-                          const mapped = deduped.map((s: any) => {
-                            const dl = s.downloadUrl || []; const im = s.image || [];
-                            return { id: s.id, title: s.name || '', artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality==='320kbps')?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
-                          }).filter((s: any) => s.url);
-                          setSongsList(mapped);
-                          setSearchQuery(g.label);
+                          // Try to fetch an actual playlist for this mood
+                          const q = encodeURIComponent(g.label + ' hindi bollywood');
+                          const r = await fetch(`https://saavn.dev/api/search/playlists?query=${q}&limit=1`);
+                          const j = await r.json();
+                          if (j.success && j.data?.results?.length > 0) {
+                            const pId = j.data.results[0].id;
+                            const r2 = await fetch(`https://saavn.dev/api/playlists?id=${pId}&limit=50`);
+                            const pdata = await r2.json();
+                            const songsRaw = pdata.data?.songs || [];
+                            if (songsRaw.length > 0) {
+                              const mapped = songsRaw.map((s: any) => {
+                                const dl = s.downloadUrl || []; const im = s.image || [];
+                                return { id: s.id, title: (s.name || '').replace(/&quot;/g, '"').replace(/&amp;/g, '&'), artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality==='320kbps')?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
+                              }).filter((s: any) => s.url);
+                              if (mapped.length > 0) {
+                                setSongsList(mapped);
+                                setIsSearching(false);
+                                return;
+                              }
+                            }
+                          }
+                        } catch {}
+                        // Fallback to simple search if playlist fails
+                        try {
+                          const r = await fetch(`https://saavn.dev/api/search/songs?query=${encodeURIComponent(g.label + ' hits')}&limit=25`);
+                          const j = await r.json();
+                          if (j.success && j.data?.results) {
+                            const mapped = j.data.results.map((s: any) => {
+                              const dl = s.downloadUrl || []; const im = s.image || [];
+                              return { id: s.id, title: s.name || '', artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality==='320kbps')?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
+                            }).filter((s: any) => s.url);
+                            setSongsList(mapped);
+                          }
                         } catch {}
                         finally { setIsSearching(false); }
                       }}>
@@ -3228,7 +3241,48 @@ export default function App() {
               ].map(m => (
                 <TouchableOpacity key={m.mood}
                   style={{ width: '47%', backgroundColor: '#ffffff0d', borderWidth: 1, borderColor: '#ffffff18', borderRadius: 14, paddingVertical: 18, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center' }}
-                  onPress={() => { setCurrentMood(m.mood); setSearchQuery(m.label + ' songs'); setShowMoodGenres(false); }}>
+                  onPress={async () => {
+                    setCurrentMood(m.mood);
+                    setShowMoodGenres(false);
+                    setIsSearching(true);
+                    setSearchQuery(m.label + ' Playlist');
+                    try {
+                      // Try to fetch an actual playlist for this mood
+                      const q = encodeURIComponent(m.label + ' hindi bollywood');
+                      const r = await fetch(`https://saavn.dev/api/search/playlists?query=${q}&limit=1`);
+                      const j = await r.json();
+                      if (j.success && j.data?.results?.length > 0) {
+                        const pId = j.data.results[0].id;
+                        const r2 = await fetch(`https://saavn.dev/api/playlists?id=${pId}&limit=50`);
+                        const pdata = await r2.json();
+                        const songsRaw = pdata.data?.songs || [];
+                        if (songsRaw.length > 0) {
+                          const mapped = songsRaw.map((s: any) => {
+                            const dl = s.downloadUrl || []; const im = s.image || [];
+                            return { id: s.id, title: (s.name || '').replace(/&quot;/g, '"').replace(/&amp;/g, '&'), artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality==='320kbps')?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
+                          }).filter((s: any) => s.url);
+                          if (mapped.length > 0) {
+                            setSongsList(mapped);
+                            setIsSearching(false);
+                            return;
+                          }
+                        }
+                      }
+                    } catch {}
+                    // Fallback to simple search if playlist fails
+                    try {
+                      const r = await fetch(`https://saavn.dev/api/search/songs?query=${encodeURIComponent(m.label + ' hits')}&limit=25`);
+                      const j = await r.json();
+                      if (j.success && j.data?.results) {
+                        const mapped = j.data.results.map((s: any) => {
+                          const dl = s.downloadUrl || []; const im = s.image || [];
+                          return { id: s.id, title: s.name || '', artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality==='320kbps')?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
+                        }).filter((s: any) => s.url);
+                        setSongsList(mapped);
+                      }
+                    } catch {}
+                    finally { setIsSearching(false); }
+                  }}>
                   <Text style={{ fontSize: 20, marginRight: 10 }}>{m.emoji}</Text>
                   <Text style={{ color: '#fff', fontSize: 15, fontStyle: 'italic', fontWeight: '600' }}>{m.label}</Text>
                 </TouchableOpacity>
@@ -3249,7 +3303,45 @@ export default function App() {
               ].map(genre => (
                 <TouchableOpacity key={genre}
                   style={{ width: '47%', backgroundColor: '#ffffff0d', borderWidth: 1, borderColor: '#ffffff18', borderRadius: 14, paddingVertical: 18, paddingHorizontal: 16 }}
-                  onPress={() => { setSearchQuery(genre + ' songs'); setShowMoodGenres(false); }}>
+                  onPress={async () => {
+                    setShowMoodGenres(false);
+                    setIsSearching(true);
+                    setSearchQuery(genre + ' Playlist');
+                    try {
+                      const q = encodeURIComponent(genre + ' songs hindi bollywood');
+                      const r = await fetch(`https://saavn.dev/api/search/playlists?query=${q}&limit=1`);
+                      const j = await r.json();
+                      if (j.success && j.data?.results?.length > 0) {
+                        const pId = j.data.results[0].id;
+                        const r2 = await fetch(`https://saavn.dev/api/playlists?id=${pId}&limit=50`);
+                        const pdata = await r2.json();
+                        const songsRaw = pdata.data?.songs || [];
+                        if (songsRaw.length > 0) {
+                          const mapped = songsRaw.map((s: any) => {
+                            const dl = s.downloadUrl || []; const im = s.image || [];
+                            return { id: s.id, title: (s.name || '').replace(/&quot;/g, '"').replace(/&amp;/g, '&'), artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality==='320kbps')?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
+                          }).filter((s: any) => s.url);
+                          if (mapped.length > 0) {
+                            setSongsList(mapped);
+                            setIsSearching(false);
+                            return;
+                          }
+                        }
+                      }
+                    } catch {}
+                    try {
+                      const r = await fetch(`https://saavn.dev/api/search/songs?query=${encodeURIComponent(genre + ' songs')}&limit=25`);
+                      const j = await r.json();
+                      if (j.success && j.data?.results) {
+                        const mapped = j.data.results.map((s: any) => {
+                          const dl = s.downloadUrl || []; const im = s.image || [];
+                          return { id: s.id, title: s.name || '', artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality==='320kbps')?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
+                        }).filter((s: any) => s.url);
+                        setSongsList(mapped);
+                      }
+                    } catch {}
+                    finally { setIsSearching(false); }
+                  }}>
                   <Text style={{ color: '#fff', fontSize: 15, fontStyle: 'italic', fontWeight: '600' }}>{genre}</Text>
                 </TouchableOpacity>
               ))}
