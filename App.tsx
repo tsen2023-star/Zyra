@@ -155,7 +155,6 @@ export default function App() {
   const [autoplayReason, setAutoplayReason] = useState<string>('');
   const [autoplayQueue,  setAutoplayQueue]  = useState<any[]>([]);
   const [shakeEnabled,   setShakeEnabled]   = useState(false);
-  const [flipEnabled,    setFlipEnabled]    = useState(false);
 
   // ── Album / Movie ──
   const [albumResults,    setAlbumResults]    = useState<any[]>([]);
@@ -243,7 +242,6 @@ export default function App() {
   const handleAutoNextRef  = useRef<any>(null);
   const handleShakeNextRef = useRef<any>(null);
   const handleShakePrevRef = useRef<any>(null);
-  const handleFlipPauseRef = useRef<any>(null);
   const trackMetaRef       = useRef<Map<string, any>>(new Map());
   const urlCacheRef        = useRef<Map<string, string>>(new Map());
   const queueCtxRef = useRef({
@@ -377,38 +375,20 @@ export default function App() {
   const lastShakeTsRef   = useRef(0);
   const shakeTimerRef    = useRef<any>(null);
   const shakeSubRef      = useRef<any>(null);
+
   const shakeEnabledRef  = useRef(false);
-  const flipEnabledRef   = useRef(false);
-  const isFlippedRef     = useRef(false);
-  const lastFlipTsRef    = useRef(0);
 
   // Keep ref in sync with state
   useEffect(() => { shakeEnabledRef.current = shakeEnabled; }, [shakeEnabled]);
-  useEffect(() => { flipEnabledRef.current  = flipEnabled; },  [flipEnabled]);
 
   const startSensors = useCallback(() => {
     if (shakeSubRef.current) { shakeSubRef.current.remove(); shakeSubRef.current = null; }
-    if (!shakeEnabledRef.current && !flipEnabledRef.current) return;
+    if (!shakeEnabledRef.current) return;
     
     const SHAKE_THRESHOLD = 3.0;
     Accelerometer.setUpdateInterval(60); // faster poll
     shakeSubRef.current = Accelerometer.addListener(({ x, y, z }) => {
       const now = Date.now();
-
-      // --- Flip to Pause ---
-      if (flipEnabledRef.current) {
-        if (z < -0.85) {
-          if (!isFlippedRef.current) {
-            isFlippedRef.current = true;
-            lastFlipTsRef.current = now;
-          } else if (now - lastFlipTsRef.current > 800) { // Flipped face down for 800ms
-            if (handleFlipPauseRef.current) handleFlipPauseRef.current();
-            lastFlipTsRef.current = now + 5000; // debounce next pause by 5s
-          }
-        } else {
-          isFlippedRef.current = false;
-        }
-      }
 
       // --- Shake to Skip (Single / Double) ---
       if (shakeEnabledRef.current) {
@@ -442,14 +422,14 @@ export default function App() {
   }, []); // no deps
 
   useEffect(() => {
-    if (shakeEnabled || flipEnabled) { startSensors(); }
+    if (shakeEnabled) { startSensors(); }
     else { if (shakeSubRef.current) { shakeSubRef.current.remove(); shakeSubRef.current = null; } }
-  }, [shakeEnabled, flipEnabled, startSensors]);
+  }, [shakeEnabled, startSensors]);
 
   useEffect(() => {
     // Re-subscribe on foreground (lock screen / minimize)
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active' && (shakeEnabledRef.current || flipEnabledRef.current)) startSensors();
+      if (state === 'active' && shakeEnabledRef.current) startSensors();
     });
     return () => {
       if (shakeSubRef.current) shakeSubRef.current.remove();
@@ -746,7 +726,6 @@ export default function App() {
       if (profile.success) {
         const s = profile.data.settings || {};
         setShakeEnabled(!!s.shake_enabled);
-        setFlipEnabled(!!s.flip_enabled);
         setSmartAutoplay(s.smart_autoplay !== false);
       }
     } catch (e) { console.error('loadUserData error', e); }
@@ -1573,15 +1552,6 @@ export default function App() {
   };
   handleShakeNextRef.current = handleShakeNext;
   handleShakePrevRef.current = playPrevious;
-  handleFlipPauseRef.current = async () => {
-    try {
-      const state = await TrackPlayer.getPlaybackState();
-      if (state.state === State.Playing) {
-        await TrackPlayer.pause();
-      }
-    } catch {}
-  };
-
   // ─── Theme ───────────────────────────────────────────────────────────────────
   const isAmoled = themeMode === 'amoled';
   const isDark   = themeMode !== 'light';
@@ -2568,14 +2538,6 @@ export default function App() {
                 )}
               </View>
 
-              {/* Flip to Pause */}
-              <View style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card }]}>
-                <View style={styles.textGroup}>
-                  <Text style={[styles.settingTitle, { color: theme.text }]}>📱 Flip to Pause</Text>
-                  <Text style={[styles.settingDesc, { color: theme.subtext }]}>Place phone face down to pause music</Text>
-                </View>
-                <Switch value={flipEnabled} onValueChange={(v) => { setFlipEnabled(v); updateSetting('flip_enabled', v); }} trackColor={{ false: '#252545', true: moodColor }} thumbColor="#ffffff" />
-              </View>
 
               {/* [NEW] Audio Quality */}
               <View style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card, flexDirection: 'column', alignItems: 'flex-start' }]}>
