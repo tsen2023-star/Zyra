@@ -148,6 +148,8 @@ export default function App() {
   const [isSearching,    setIsSearching]    = useState(false);
   const [searchHistory,  setSearchHistory]  = useState<string[]>([]);
   const [isSearchFocused,setIsSearchFocused]= useState(false);
+  const [showStatsModal, setShowStatsModal] = useState(false);
+  const [statsData,      setStatsData]      = useState<any>(null);
 
   // ── Smart Autoplay ──
   const [smartAutoplay,  setSmartAutoplay]  = useState(true);
@@ -740,6 +742,34 @@ export default function App() {
       const json = await resp.json();
       if (json.success) setRecentlyPlayed((json.data?.history || []).slice(0, 10));
     } catch {}
+  };
+
+  // ─── Load Listening Stats ──────────────────────────────────────────────────────
+  const loadListeningStats = async () => {
+    if (!userToken) return;
+    try {
+      setIsLoading(true);
+      const resp = await fetch(`${BACKEND_URL}/api/user/history`, { headers: { Authorization: `Bearer ${userToken}` } });
+      const json = await resp.json();
+      if (json.success) {
+        const hist = json.data?.history || [];
+        const total = hist.length;
+        const artistMap: Record<string, number> = {};
+        const moodMap: Record<string, number> = {};
+        hist.forEach((s: any) => {
+          if (s.artist) artistMap[s.artist] = (artistMap[s.artist] || 0) + 1;
+          if (s.mood) moodMap[s.mood] = (moodMap[s.mood] || 0) + 1;
+        });
+        const topArtist = Object.entries(artistMap).sort((a,b) => b[1]-a[1])[0]?.[0] || 'Unknown';
+        const topMood   = Object.entries(moodMap).sort((a,b) => b[1]-a[1])[0]?.[0] || 'Chill';
+        setStatsData({ total, topArtist, topMood });
+        setShowStatsModal(true);
+      }
+    } catch (e) {
+      showAlert('Error', 'Could not load stats');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // ─── Auth ────────────────────────────────────────────────────────────────────
@@ -2510,6 +2540,20 @@ export default function App() {
                 </ScrollView>
               </View>
 
+              {/* Stats */}
+              <TouchableOpacity style={[styles.settingRow, { marginBottom: 15, flexDirection: 'column', alignItems: 'stretch', backgroundColor: theme.card }]} onPress={loadListeningStats}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+                  <Text style={[styles.settingTitle, { color: theme.text }]}>📊 Listening Stats</Text>
+                  <Ionicons name="chevron-forward" size={20} color={theme.subtext} />
+                </View>
+                <View style={{ flexDirection: 'row', gap: 15, flexWrap: 'wrap', justifyContent: 'space-between' }}>
+                  <View style={styles.statBadge}><Text style={styles.statNumber}>{favorites.length}</Text><Text style={styles.statLabel}>Favorites</Text></View>
+                  <View style={styles.statBadge}><Text style={styles.statNumber}>{playlists.length}</Text><Text style={styles.statLabel}>Playlists</Text></View>
+                  <View style={styles.statBadge}><Text style={styles.statNumber}>{downloads.length}</Text><Text style={styles.statLabel}>Downloads</Text></View>
+                  <View style={[styles.statBadge, { backgroundColor: moodColor + '22' }]}><Text style={[styles.statNumber, { color: moodColor }]}>Recap</Text><Text style={styles.statLabel}>View Vibe</Text></View>
+                </View>
+              </TouchableOpacity>
+
               {/* Smart Autoplay */}
               <View style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card }]}>
                 <View style={styles.textGroup}>
@@ -3481,6 +3525,45 @@ export default function App() {
           </View>
         </View>
       </Modal>
+
+      {/* Listening Stats Modal */}
+      <Modal animationType="slide" transparent visible={showStatsModal} onRequestClose={() => setShowStatsModal(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(5,5,20,0.85)', justifyContent: 'center', alignItems: 'center', padding: 25 }}>
+          <View style={{ width: '100%', backgroundColor: theme.card, borderRadius: 30, overflow: 'hidden', padding: 30, borderWidth: 1, borderColor: moodColor + '40' }}>
+            <View style={{ alignItems: 'center', marginBottom: 25 }}>
+              <Ionicons name="stats-chart" size={40} color={moodColor} style={{ marginBottom: 10 }} />
+              <Text style={{ fontSize: 24, fontWeight: 'bold', color: theme.text, letterSpacing: 1 }}>Your Music Vibe</Text>
+              <Text style={{ fontSize: 14, color: theme.subtext, marginTop: 4 }}>Based on your recent listening</Text>
+            </View>
+
+            {statsData && (
+              <View style={{ gap: 20 }}>
+                <View style={{ backgroundColor: '#00000033', padding: 20, borderRadius: 20, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 13, color: theme.subtext, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 5 }}>Dominant Mood</Text>
+                  <Text style={{ fontSize: 32, fontWeight: '900', color: moodColor }}>{statsData.topMood.toUpperCase()}</Text>
+                </View>
+
+                <View style={{ flexDirection: 'row', gap: 15 }}>
+                  <View style={{ flex: 1, backgroundColor: '#00000033', padding: 18, borderRadius: 20, alignItems: 'center' }}>
+                    <Text style={{ fontSize: 12, color: theme.subtext, marginBottom: 5 }}>Top Artist</Text>
+                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.text, textAlign: 'center' }} numberOfLines={1}>{statsData.topArtist}</Text>
+                  </View>
+                  <View style={{ flex: 1, backgroundColor: '#00000033', padding: 18, borderRadius: 20, alignItems: 'center' }}>
+                    <Text style={{ fontSize: 12, color: theme.subtext, marginBottom: 5 }}>Tracks Played</Text>
+                    <Text style={{ fontSize: 20, fontWeight: 'bold', color: theme.text }}>{statsData.total}</Text>
+                  </View>
+                </View>
+              </View>
+            )}
+
+            <TouchableOpacity onPress={() => setShowStatsModal(false)}
+              style={{ marginTop: 30, width: '100%', height: 50, borderRadius: 25, backgroundColor: moodColor, justifyContent: 'center', alignItems: 'center' }}>
+              <Text style={{ color: '#050515', fontWeight: 'bold', fontSize: 16 }}>Awesome</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
 
     </Animated.View>
   );
