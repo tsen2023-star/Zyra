@@ -1,4 +1,4 @@
-package com.bablu2006.zyramusic
+package com.babulu2006.zyramusic
 
 import android.app.Application
 import android.content.res.Configuration

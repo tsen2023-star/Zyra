@@ -109,9 +109,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.bablu2006.zyramusic'
+    namespace 'com.babulu2006.zyramusic'
     defaultConfig {
-        applicationId 'com.bablu2006.zyramusic'
+        applicationId 'com.babulu2006.zyramusic'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
