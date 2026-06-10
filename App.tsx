@@ -155,6 +155,7 @@ export default function App() {
   const [autoplayReason, setAutoplayReason] = useState<string>('');
   const [autoplayQueue,  setAutoplayQueue]  = useState<any[]>([]);
   const [shakeEnabled,   setShakeEnabled]   = useState(false);
+  const [flipEnabled,    setFlipEnabled]    = useState(false);
 
   // ── Album / Movie ──
   const [albumResults,    setAlbumResults]    = useState<any[]>([]);
@@ -241,6 +242,8 @@ export default function App() {
   const playNextRef        = useRef<any>(null);
   const handleAutoNextRef  = useRef<any>(null);
   const handleShakeNextRef = useRef<any>(null);
+  const handleShakePrevRef = useRef<any>(null);
+  const handleFlipPauseRef = useRef<any>(null);
   const trackMetaRef       = useRef<Map<string, any>>(new Map());
   const urlCacheRef        = useRef<Map<string, string>>(new Map());
   const queueCtxRef = useRef({
@@ -368,59 +371,91 @@ export default function App() {
     return () => { if (vinylLoop) vinylLoop.stop(); };
   }, [isPlaying]);
 
-  // ─── Shake sensor ─ always active, ref-based so no stale closure ────────────
+  // ─── Sensor logic ─ always active, ref-based so no stale closure ────────────
   const shakeCountRef    = useRef(0);
   const shakeAboveRef    = useRef(false);
   const lastShakeTsRef   = useRef(0);
+  const shakeTimerRef    = useRef<any>(null);
   const shakeSubRef      = useRef<any>(null);
-  const shakeEnabledRef  = useRef(false); // always up-to-date, no stale closure
+  const shakeEnabledRef  = useRef(false);
+  const flipEnabledRef   = useRef(false);
+  const isFlippedRef     = useRef(false);
+  const lastFlipTsRef    = useRef(0);
 
   // Keep ref in sync with state
   useEffect(() => { shakeEnabledRef.current = shakeEnabled; }, [shakeEnabled]);
+  useEffect(() => { flipEnabledRef.current  = flipEnabled; },  [flipEnabled]);
 
-  const startShake = useCallback(() => {
+  const startSensors = useCallback(() => {
     if (shakeSubRef.current) { shakeSubRef.current.remove(); shakeSubRef.current = null; }
-    if (!shakeEnabledRef.current) return;
-    const THRESHOLD = 3.0;
+    if (!shakeEnabledRef.current && !flipEnabledRef.current) return;
+    
+    const SHAKE_THRESHOLD = 3.0;
     Accelerometer.setUpdateInterval(60); // faster poll
     shakeSubRef.current = Accelerometer.addListener(({ x, y, z }) => {
-      if (!shakeEnabledRef.current) return;
-      const mag = Math.sqrt(x * x + y * y + z * z);
-      const isAbove = mag > THRESHOLD;
       const now = Date.now();
-      if (now - lastShakeTsRef.current > 2500) {
-        shakeCountRef.current = 0;
-        shakeAboveRef.current = false;
-      }
-      if (isAbove && !shakeAboveRef.current) {
-        shakeCountRef.current += 1;
-        lastShakeTsRef.current = now;
-        if (shakeCountRef.current >= 4) {
-          shakeCountRef.current = 0;
-          shakeAboveRef.current = false;
-          if (handleShakeNextRef.current) handleShakeNextRef.current();
+
+      // --- Flip to Pause ---
+      if (flipEnabledRef.current) {
+        if (z < -0.85) {
+          if (!isFlippedRef.current) {
+            isFlippedRef.current = true;
+            lastFlipTsRef.current = now;
+          } else if (now - lastFlipTsRef.current > 800) { // Flipped face down for 800ms
+            if (handleFlipPauseRef.current) handleFlipPauseRef.current();
+            lastFlipTsRef.current = now + 5000; // debounce next pause by 5s
+          }
+        } else {
+          isFlippedRef.current = false;
         }
       }
-      shakeAboveRef.current = isAbove;
+
+      // --- Shake to Skip (Single / Double) ---
+      if (shakeEnabledRef.current) {
+        const mag = Math.sqrt(x * x + y * y + z * z);
+        const isAbove = mag > SHAKE_THRESHOLD;
+        
+        if (now - lastShakeTsRef.current > 1500) {
+          shakeCountRef.current = 0;
+          shakeAboveRef.current = false;
+        }
+
+        if (isAbove && !shakeAboveRef.current) {
+          shakeCountRef.current += 1;
+          lastShakeTsRef.current = now;
+          
+          if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+          
+          shakeTimerRef.current = setTimeout(() => {
+            const count = shakeCountRef.current;
+            shakeCountRef.current = 0;
+            if (count >= 4) {
+              if (handleShakeNextRef.current) handleShakeNextRef.current();
+            } else if (count >= 2) {
+              if (handleShakePrevRef.current) handleShakePrevRef.current();
+            }
+          }, 600); // Wait 600ms after a pulse to resolve the gesture
+        }
+        shakeAboveRef.current = isAbove;
+      }
     });
-  }, []); // no deps — reads from ref instead
+  }, []); // no deps
 
   useEffect(() => {
-    // Start/stop based on toggle
-    if (shakeEnabled) { startShake(); }
+    if (shakeEnabled || flipEnabled) { startSensors(); }
     else { if (shakeSubRef.current) { shakeSubRef.current.remove(); shakeSubRef.current = null; } }
-  }, [shakeEnabled, startShake]);
+  }, [shakeEnabled, flipEnabled, startSensors]);
 
   useEffect(() => {
     // Re-subscribe on foreground (lock screen / minimize)
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active' && shakeEnabledRef.current) startShake();
+      if (state === 'active' && (shakeEnabledRef.current || flipEnabledRef.current)) startSensors();
     });
     return () => {
       if (shakeSubRef.current) shakeSubRef.current.remove();
       sub.remove();
     };
-  }, [startShake]);
+  }, [startSensors]);
 
 
   // ─── [VISUAL] 4-bar equalizer animation ──────────────────────────────────────
@@ -711,6 +746,7 @@ export default function App() {
       if (profile.success) {
         const s = profile.data.settings || {};
         setShakeEnabled(!!s.shake_enabled);
+        setFlipEnabled(!!s.flip_enabled);
         setSmartAutoplay(s.smart_autoplay !== false);
       }
     } catch (e) { console.error('loadUserData error', e); }
@@ -1536,6 +1572,15 @@ export default function App() {
     finally { setIsLoading(false); }
   };
   handleShakeNextRef.current = handleShakeNext;
+  handleShakePrevRef.current = playPrevious;
+  handleFlipPauseRef.current = async () => {
+    try {
+      const state = await TrackPlayer.getPlaybackState();
+      if (state.state === State.Playing) {
+        await TrackPlayer.pause();
+      }
+    } catch {}
+  };
 
   // ─── Theme ───────────────────────────────────────────────────────────────────
   const isAmoled = themeMode === 'amoled';
@@ -2505,12 +2550,31 @@ export default function App() {
               </View>
 
               {/* Shake */}
+              <View style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card, flexDirection: 'column', alignItems: 'stretch' }]}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View style={styles.textGroup}>
+                    <Text style={[styles.settingTitle, { color: theme.text, fontSize: 18 }]}>📳 Shake Controls</Text>
+                    <Text style={[styles.settingDesc, { color: theme.subtext, fontSize: 13 }]}>Enable motion-based track skipping</Text>
+                  </View>
+                  <Switch value={shakeEnabled} onValueChange={(v) => { setShakeEnabled(v); updateSetting('shake_enabled', v); }} trackColor={{ false: '#252545', true: moodColor }} thumbColor="#ffffff" />
+                </View>
+                {shakeEnabled && (
+                  <View style={{ marginTop: 12, backgroundColor: 'rgba(0,0,0,0.2)', padding: 12, borderRadius: 8 }}>
+                    <Text style={{ color: theme.text, fontSize: 13, fontWeight: 'bold', marginBottom: 4 }}>How to use:</Text>
+                    <Text style={{ color: theme.subtext, fontSize: 12, lineHeight: 18 }}>• <Text style={{ color: moodColor, fontWeight: 'bold' }}>Short Shake</Text> (2 pulses): Go to Previous Track</Text>
+                    <Text style={{ color: theme.subtext, fontSize: 12, lineHeight: 18 }}>• <Text style={{ color: moodColor, fontWeight: 'bold' }}>Long Shake</Text> (4+ pulses): Auto-play similar track</Text>
+                    <Text style={{ color: '#888', fontSize: 11, marginTop: 6, fontStyle: 'italic' }}>Note: Shake firmly and hold the phone still for half a second to trigger.</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Flip to Pause */}
               <View style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card }]}>
                 <View style={styles.textGroup}>
-                  <Text style={[styles.settingTitle, { color: theme.text }]}>📳 Shake to Skip</Text>
-                  <Text style={[styles.settingDesc, { color: theme.subtext }]}>Shake phone to play a same-genre song</Text>
+                  <Text style={[styles.settingTitle, { color: theme.text }]}>📱 Flip to Pause</Text>
+                  <Text style={[styles.settingDesc, { color: theme.subtext }]}>Place phone face down to pause music</Text>
                 </View>
-                <Switch value={shakeEnabled} onValueChange={(v) => { setShakeEnabled(v); updateSetting('shake_enabled', v); }} trackColor={{ false: '#252545', true: moodColor }} thumbColor="#ffffff" />
+                <Switch value={flipEnabled} onValueChange={(v) => { setFlipEnabled(v); updateSetting('flip_enabled', v); }} trackColor={{ false: '#252545', true: moodColor }} thumbColor="#ffffff" />
               </View>
 
               {/* [NEW] Audio Quality */}
@@ -2939,7 +3003,7 @@ export default function App() {
           />
           {/* Header */}
           <View style={styles.fullScreenHeader}>
-            <TouchableOpacity onPress={() => setIsFullScreen(false)} style={{ padding: 10 }}>
+            <TouchableOpacity onPress={() => setIsFullScreen(false)} style={{ padding: 10 }} hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}>
               <Ionicons name="chevron-down" size={32} color="#fff" />
             </TouchableOpacity>
             <View style={{ alignItems: 'center' }}>
@@ -2955,7 +3019,7 @@ export default function App() {
                 </View>
               )}
             </View>
-            <TouchableOpacity onPress={() => setMenuVisible(true)} style={{ padding: 10 }}>
+            <TouchableOpacity onPress={() => setMenuVisible(true)} style={{ padding: 10 }} hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}>
               <Ionicons name="ellipsis-horizontal" size={24} color="#fff" />
             </TouchableOpacity>
           </View>
@@ -3546,7 +3610,7 @@ const styles = StyleSheet.create({
 
   // ── Full screen player ──
   fullScreenContainer:  { flex: 1, paddingTop: Platform.OS === 'ios' ? 50 : 32 },
-  fullScreenHeader:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 12, marginBottom: 8 },
+  fullScreenHeader:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 12, marginBottom: 8, zIndex: 10, elevation: 10 },
   fullScreenHeaderText: { color: 'rgba(255,255,255,0.55)', fontSize: 11, fontWeight: '700', letterSpacing: 2.5, textTransform: 'uppercase' },
   moodBadge:            { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, borderWidth: 1, marginTop: 4 },
   moodBadgeText:        { fontSize: 11, fontWeight: '700' },
