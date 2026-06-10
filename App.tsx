@@ -568,9 +568,21 @@ export default function App() {
       'best+hindi+songs+2024',
       'new+bollywood+2024',
     ];
-    // fetch all in parallel, set state from first response that has real data
-    let trendingSet = false;
-    trendingQueries.forEach(async (q) => {
+    // fetch all in parallel, use backend /api/trending for proper CDN URLs
+    (async () => {
+      try {
+        const tr = await fetch(`${BACKEND_URL}/api/trending`);
+        if (tr.ok) {
+          const tj = await tr.json();
+          if (tj.success && Array.isArray(tj.songs) && tj.songs.length > 0) {
+            setTrendingSongs(tj.songs);
+            return; // backend worked, skip fallback
+          }
+        }
+      } catch {}
+      // fallback: saavn.dev search
+      let trendingSet = false;
+      trendingQueries.forEach(async (q) => {
       try {
         const ctrl = new AbortController();
         const tid = setTimeout(() => ctrl.abort(), 9000);
@@ -585,7 +597,8 @@ export default function App() {
           setTrendingSongs(results.map(mapSaavnTrend));
         }
       } catch { /* ignore aborted / network errors */ }
-    });
+      });
+    })();
 
     fetch(`${BACKEND_URL}/api/artists/top`).then(r => r.json()).then(j => { if (j.success) setTopArtists(j.artists || []); }).catch(() => {});
     return () => clearInterval(keepAlive);
@@ -2310,19 +2323,62 @@ export default function App() {
         )}
 
         {/* ── PLAYLIST VIEW ────────────────────────────────────────────────── */}
-        {currentScreen === 'playlist_view' && activePlaylistId && (
-          <View style={styles.screenBody}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
-              <TouchableOpacity onPress={() => setCurrentScreen('library')} style={{ paddingRight: 15 }}>
-                <Ionicons name="arrow-back" size={24} color="#fff" />
-              </TouchableOpacity>
-              <Text style={[styles.mainText, { marginBottom: 0 }]}>{playlists.find(p => p.id === activePlaylistId)?.name}</Text>
+        {currentScreen === 'playlist_view' && activePlaylistId && (() => {
+          const pl = playlists.find(p => p.id === activePlaylistId);
+          if (!pl) return null;
+          return (
+            <View style={styles.screenBody}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                <TouchableOpacity onPress={() => setCurrentScreen('library')} style={{ paddingRight: 15 }}>
+                  <Ionicons name="arrow-back" size={24} color="#fff" />
+                </TouchableOpacity>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.mainText, { marginBottom: 0 }]}>{pl.name}</Text>
+                  <Text style={{ color: '#888', fontSize: 11 }}>{pl.songs.length} songs • Hold a song to remove</Text>
+                </View>
+                {pl.songs.length > 0 && (
+                  <TouchableOpacity
+                    style={{ backgroundColor: moodColor, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 }}
+                    onPress={() => { setSongsList(pl.songs); handleTrackPress(pl.songs[0]); }}>
+                    <Text style={{ color: '#000', fontWeight: '800', fontSize: 13 }}>▶ Play All</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+                {pl.songs.map((song, idx) => (
+                  <TouchableOpacity
+                    key={song.id + idx}
+                    style={[styles.trackCard, activeTrack?.id === song.id && { borderLeftWidth: 3, borderLeftColor: moodColor }]}
+                    onPress={() => { setSongsList(pl.songs); handleTrackPress(song); }}
+                    onLongPress={() => {
+                      showAlert('Remove Song', `Remove "${song.title}" from this playlist?`, [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Remove', style: 'destructive', onPress: async () => {
+                          try {
+                            const json = await apiCall(`/api/user/playlists/${pl.id}/songs/${song.id}`, 'DELETE');
+                            if (json.success) setPlaylists(json.data.playlists);
+                            else setPlaylists(prev => prev.map(p => p.id === pl.id ? { ...p, songs: p.songs.filter(s => s.id !== song.id) } : p));
+                          } catch {
+                            setPlaylists(prev => prev.map(p => p.id === pl.id ? { ...p, songs: p.songs.filter(s => s.id !== song.id) } : p));
+                          }
+                        }},
+                      ]);
+                    }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                      <Text style={{ color: '#555', width: 22, fontSize: 12, fontWeight: '700' }}>{idx + 1}</Text>
+                      <Image source={{ uri: song.image }} style={{ width: 44, height: 44, borderRadius: 6, marginRight: 12 }} />
+                      <View style={{ flex: 1 }}>
+                        <Text numberOfLines={1} style={{ color: activeTrack?.id === song.id ? moodColor : '#fff', fontWeight: '700', fontSize: 14 }}>{song.title}</Text>
+                        <Text numberOfLines={1} style={{ color: '#888', fontSize: 12 }}>{song.artist}</Text>
+                      </View>
+                      <Ionicons name={activeTrack?.id === song.id && isPlaying ? 'pause' : 'play'} size={18} color={activeTrack?.id === song.id ? moodColor : '#555'} />
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
-            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-              {playlists.find(p => p.id === activePlaylistId)?.songs.map(song => renderTrackCard(song, activeTrack?.id === song.id, isTrackFavorite(song.id)))}
-            </ScrollView>
-          </View>
-        )}
+          );
+        })()}
 
         {/* ── DOWNLOADS ───────────────────────────────────────────────────── */}
         {currentScreen === 'downloads' && (
