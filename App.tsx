@@ -2167,6 +2167,7 @@ export default function App() {
                       ))}
                     </ScrollView>
                   </>
+                )}
 
 
                 {/* ── Featured Playlists (Posters) ── */}
@@ -2329,8 +2330,6 @@ export default function App() {
                     ))}
                   </View>
                 )}
-
-                                )}
 
                 {/* ── Trending Now ── */}
                 <Text style={[styles.echoSectionLabel, { marginBottom: 2 }]}>Trending Now 🔥</Text>
