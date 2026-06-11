@@ -1082,25 +1082,7 @@ export default function App() {
     if (song.url && typeof song.url === 'string' && song.url.includes('saavncdn')) {
       return song.url;
     }
-    try {
-      const ac = new AbortController(); const acTid = setTimeout(() => ac.abort(), 6000);
-      const res  = await fetch(`https://saavn.dev/api/songs/${song.id}`, { signal: ac.signal });
-      clearTimeout(acTid);
 
-      const json = await res.json();
-      const urls: any[] = json?.data?.[0]?.downloadUrl || [];
-      // [NEW] prefer selected quality
-      const best = urls.find((u: any) => u.quality === audioQuality)
-                || urls.find((u: any) => u.quality === '320kbps')
-                || urls.find((u: any) => u.quality === '160kbps')
-                || urls[urls.length - 1];
-      if (best?.url) {
-        urlCacheRef.current.set(song.id, best.url);
-        return best.url;
-      }
-    } catch (e) {
-      console.warn('saavn.dev direct fetch failed, using backend fallback:', e);
-    }
     const te = encodeURIComponent(song.title  || '');
     const ae = encodeURIComponent(song.artist || '');
     return `${BACKEND_URL}/api/stream?id=${song.id}&title=${te}&artist=${ae}`;

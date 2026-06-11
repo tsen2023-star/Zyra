@@ -2,7 +2,7 @@
   "expo": {
     "name": "Zyra Music",
     "slug": "zyra-music",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -19,7 +19,7 @@
     },
     "android": {
       "package": "com.babulu2006.zyramusic",
-      "versionCode": 5,
+      "versionCode": 6,
       "permissions": [
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
