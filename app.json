@@ -28,10 +28,10 @@
     "plugins": [
       "./rntp.plugin.js"
     ],
-    "owner": "babulu2006",
+    "owner": "babbllu2006",
     "extra": {
       "eas": {
-        "projectId": "c8926498-f238-4a9d-bdf4-115d4e0fe83e"
+        "projectId": "e457d490-b3ad-4b14-be84-6711dddc49b3"
       }
     }
   }

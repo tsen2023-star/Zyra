@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity,
   Switch, StatusBar, ActivityIndicator, Modal, KeyboardAvoidingView,
   Platform, Animated, Easing, Image, BackHandler, Share, PanResponder,
-  AppState,
+  AppState, RefreshControl
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import TrackPlayer, {
@@ -14,6 +14,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import { Accelerometer } from 'expo-sensors';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Circle } from 'react-native-svg';
 
 const BACKEND_URL = 'https://zyra-backend-9nvt.onrender.com';
 
@@ -133,6 +134,8 @@ export default function App() {
 
   // ── Trending ──
   const [trendingSongs, setTrendingSongs] = useState<any[]>([]);
+  const [featuredPlaylists, setFeaturedPlaylists] = useState<any[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
 
   // ── Custom Alert ──
   const [alertVisible,  setAlertVisible]  = useState(false);
@@ -571,9 +574,9 @@ export default function App() {
       return { id: s.id, title: s.name || '', artist, image, url, duration: s.duration || 0 };
     };
     const trendingQueries = [
-      'arijit+singh+hits+2024',
-      'top+bollywood+songs+2024',
-      'trending+hindi+songs',
+      'global+top+50',
+      'latest+bollywood+hits',
+      'trending+hits+2024',
       'best+hindi+songs+2024',
       'new+bollywood+2024',
     ];
@@ -612,6 +615,45 @@ export default function App() {
     fetch(`${BACKEND_URL}/api/artists/top`).then(r => r.json()).then(j => { if (j.success) setTopArtists(j.artists || []); }).catch(() => {});
     return () => clearInterval(keepAlive);
   }, []);
+
+  const fetchFeaturedPlaylists = useCallback(async () => {
+    try {
+      const keywords = [
+        { key: 'romantic', title: 'Romance', subtitle: 'Feel the love' },
+        { key: 'workout', title: 'Workout', subtitle: 'Pump it up' },
+        { key: 'chill', title: 'Chill', subtitle: 'Kick back & relax' },
+        { key: 'party', title: 'Party', subtitle: 'Dance the night away' },
+        { key: 'lofi', title: 'Lo-Fi', subtitle: 'Beats to study/relax to' },
+        { key: 'devotional', title: 'Devotional', subtitle: 'Peaceful & spiritual' },
+        { key: 'punjabi', title: 'Punjabi Hits', subtitle: 'Bhangra beats' },
+        { key: 'pop', title: 'Pop Sensations', subtitle: 'Top chart bangers' }
+      ];
+      const results = await Promise.all(keywords.map(async (kw) => {
+        try {
+          const r = await fetch(`https://saavn.dev/api/search/playlists?query=${kw.key}&limit=20`);
+          const j = await r.json();
+          if (j.success && j.data?.results) {
+            const playlists = j.data.results.map((p: any) => {
+              const imgs = p.image || [];
+              const img = imgs.find((i: any) => i.quality === '500x500')?.url || imgs[imgs.length - 1]?.url || '';
+              return { id: p.id, title: p.title || p.name || '', subtitle: p.subtitle || p.description || '', image: img };
+            }).filter((p: any) => p.image);
+            return { title: kw.title, subtitle: kw.subtitle, items: playlists.sort(() => 0.5 - Math.random()).slice(0, 10) };
+          }
+        } catch {}
+        return null;
+      }));
+      setFeaturedPlaylists(results.filter(Boolean));
+    } catch (e) { console.error('Featured playlists error', e); }
+  }, []);
+
+  const onRefreshHome = useCallback(async () => {
+    setRefreshing(true);
+    await fetchFeaturedPlaylists();
+    setRefreshing(false);
+  }, [fetchFeaturedPlaylists]);
+
+  useEffect(() => { fetchFeaturedPlaylists(); }, [fetchFeaturedPlaylists]);
 
   // ─── RNTP setup ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1559,7 +1601,7 @@ export default function App() {
     const artist = (activeTrack.artist || '').split(',')[0].trim();
     const title  = activeTrack.title || '';
     // 1. Smart backend autoplay
-    if (smartAutoplay) {
+    if (false && smartAutoplay) {
       try {
         setIsLoading(true);
         const qs  = `songId=${activeTrack.id}&userId=${userId||''}&mood=${currentMood}`;
@@ -2096,50 +2138,7 @@ export default function App() {
               </View>
             ) : (
               /* ── HOME FEED ── */
-              <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-
-                {/* Search history — only show when search bar is focused and query is empty */}
-                {isSearchFocused && searchHistory.length > 0 && (
-                  <View style={{ backgroundColor: theme.card, borderRadius: 16, marginBottom: 12, overflow: 'hidden', borderWidth: 1, borderColor: theme.border }}>
-                    <Text style={{ color: moodColor, fontSize: 12, fontWeight: '800', letterSpacing: 1, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 6, textTransform: 'uppercase' }}>Search history</Text>
-                    {searchHistory.slice(0, 5).map((item, i) => (
-                      <TouchableOpacity key={i}
-                        style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 13, borderTopWidth: 1, borderTopColor: theme.border + '44' }}
-                        onPress={async () => {
-                          // Search for the history item and auto-play first result
-                          setIsSearchFocused(false);
-                          setSearchQuery(item);
-                          setIsSearching(true);
-                          try {
-                            const controller = new AbortController();
-                            setTimeout(() => controller.abort(), 8000);
-                            const r = await fetch(`https://saavn.dev/api/search/songs?query=${encodeURIComponent(item)}&limit=10`, { signal: controller.signal });
-                            const j = await r.json();
-                            if (j.success && j.data?.results?.length > 0) {
-                              const s = j.data.results[0];
-                              const dlUrls: any[] = s.downloadUrl || [];
-                              const url = dlUrls.find((u: any) => u.quality === '320kbps')?.url || dlUrls[dlUrls.length - 1]?.url || '';
-                              const imgs: any[] = s.image || [];
-                              const image = imgs.find((ig: any) => ig.quality === '500x500')?.url || imgs[imgs.length - 1]?.url || '';
-                              const artist = s.artists?.primary?.map((a: any) => a.name).join(', ') || '';
-                              const song = { id: s.id, title: s.name || '', artist, image, url, duration: s.duration || 0 };
-                              handleTrackPress(song);
-                            }
-                          } catch {}
-                          finally { setIsSearching(false); }
-                        }}>
-                        <Ionicons name="time-outline" size={16} color={theme.subtext} style={{ marginRight: 14 }} />
-                        <Text style={{ flex: 1, color: theme.text, fontSize: 14 }}>{item}</Text>
-                        <TouchableOpacity onPress={() => removeSearchHistory(item)} hitSlop={{ top:10,bottom:10,left:10,right:10 }}>
-                          <Ionicons name="close" size={14} color={theme.subtext} style={{ marginRight: 8 }} />
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => setSearchQuery(item)} hitSlop={{ top:10,bottom:10,left:10,right:10 }}>
-                          <Ionicons name="arrow-up-outline" size={16} color={moodColor} style={{ transform: [{ rotate: '45deg' }] }} />
-                        </TouchableOpacity>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
+              <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefreshHome} tintColor={moodColor} />}>
 
                 {/* Recently Played */}
                 {recentlyPlayed.length > 0 && (
@@ -2168,6 +2167,49 @@ export default function App() {
                       ))}
                     </ScrollView>
                   </>
+
+
+                {/* ── Featured Playlists (Posters) ── */}
+                {featuredPlaylists.length > 0 && !isSearchFocused && (
+                  <View style={{ marginTop: 10 }}>
+                    {featuredPlaylists.map((section: any, sectionIdx: number) => (
+                      <View key={sectionIdx} style={{ marginBottom: 28 }}>
+                        <Text style={[styles.echoSectionLabel, { marginBottom: 2 }]}>{section.title}</Text>
+                        <Text style={{ color: theme.subtext, fontSize: 11, fontStyle: 'italic', marginBottom: 12, textTransform: 'uppercase' }}>{section.subtitle}</Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                          {section.items.map((pl: any, i: number) => (
+                            <TouchableOpacity key={i} style={{ width: 140, height: 220, marginRight: 14, borderRadius: 16, overflow: 'hidden', backgroundColor: theme.surface }}
+                              onPress={async () => {
+                                setCurrentMood('default');
+                                setIsSearching(true);
+                                setSearchQuery(pl.title);
+                                try {
+                                  const r = await fetch(`https://saavn.dev/api/playlists?id=${pl.id}&limit=50`);
+                                  const pdata = await r.json();
+                                  const songsRaw = pdata.data?.songs || [];
+                                  if (songsRaw.length > 0) {
+                                    const mapped = songsRaw.map((s: any) => {
+                                      const dl = s.downloadUrl || []; const im = s.image || [];
+                                      return { id: s.id, title: (s.name || '').replace(/&quot;/g, '"').replace(/&amp;/g, '&'), artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality==='320kbps')?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
+                                    }).filter((s: any) => s.url);
+                                    if (mapped.length > 0) {
+                                      setSongsList(mapped);
+                                    }
+                                  }
+                                } catch {}
+                                finally { setIsSearching(false); }
+                              }}>
+                              {pl.image ? <Image source={{ uri: pl.image }} style={{ width: '100%', height: '100%' }} /> : <View style={{ flex: 1, backgroundColor: moodColor }} />}
+                              <LinearGradient colors={['transparent', 'rgba(0,0,0,0.8)']} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12, paddingTop: 30 }}>
+                                <Text numberOfLines={2} style={{ color: '#fff', fontSize: 14, fontWeight: 'bold', textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 4 }}>{pl.title}</Text>
+                                <Text numberOfLines={1} style={{ color: '#ccc', fontSize: 11, marginTop: 4 }}>{pl.subtitle}</Text>
+                              </LinearGradient>
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      </View>
+                    ))}
+                  </View>
                 )}
 
                 {/* ── Moods & Genres — 3-column grid ── */}
@@ -2242,6 +2284,53 @@ export default function App() {
                     </TouchableOpacity>
                   ))}
                 </View>
+
+
+
+                {/* Search history — only show when search bar is focused and query is empty */}
+                {isSearchFocused && searchHistory.length > 0 && (
+                  <View style={{ backgroundColor: theme.card, borderRadius: 16, marginBottom: 12, overflow: 'hidden', borderWidth: 1, borderColor: theme.border }}>
+                    <Text style={{ color: moodColor, fontSize: 12, fontWeight: '800', letterSpacing: 1, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 6, textTransform: 'uppercase' }}>Search history</Text>
+                    {searchHistory.slice(0, 5).map((item, i) => (
+                      <TouchableOpacity key={i}
+                        style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 13, borderTopWidth: 1, borderTopColor: theme.border + '44' }}
+                        onPress={async () => {
+                          // Search for the history item and auto-play first result
+                          setIsSearchFocused(false);
+                          setSearchQuery(item);
+                          setIsSearching(true);
+                          try {
+                            const controller = new AbortController();
+                            setTimeout(() => controller.abort(), 8000);
+                            const r = await fetch(`https://saavn.dev/api/search/songs?query=${encodeURIComponent(item)}&limit=10`, { signal: controller.signal });
+                            const j = await r.json();
+                            if (j.success && j.data?.results?.length > 0) {
+                              const s = j.data.results[0];
+                              const dlUrls: any[] = s.downloadUrl || [];
+                              const url = dlUrls.find((u: any) => u.quality === '320kbps')?.url || dlUrls[dlUrls.length - 1]?.url || '';
+                              const imgs: any[] = s.image || [];
+                              const image = imgs.find((ig: any) => ig.quality === '500x500')?.url || imgs[imgs.length - 1]?.url || '';
+                              const artist = s.artists?.primary?.map((a: any) => a.name).join(', ') || '';
+                              const song = { id: s.id, title: s.name || '', artist, image, url, duration: s.duration || 0 };
+                              handleTrackPress(song);
+                            }
+                          } catch {}
+                          finally { setIsSearching(false); }
+                        }}>
+                        <Ionicons name="time-outline" size={16} color={theme.subtext} style={{ marginRight: 14 }} />
+                        <Text style={{ flex: 1, color: theme.text, fontSize: 14 }}>{item}</Text>
+                        <TouchableOpacity onPress={() => removeSearchHistory(item)} hitSlop={{ top:10,bottom:10,left:10,right:10 }}>
+                          <Ionicons name="close" size={14} color={theme.subtext} style={{ marginRight: 8 }} />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setSearchQuery(item)} hitSlop={{ top:10,bottom:10,left:10,right:10 }}>
+                          <Ionicons name="arrow-up-outline" size={16} color={moodColor} style={{ transform: [{ rotate: '45deg' }] }} />
+                        </TouchableOpacity>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+
+                                )}
 
                 {/* ── Trending Now ── */}
                 <Text style={[styles.echoSectionLabel, { marginBottom: 2 }]}>Trending Now 🔥</Text>
@@ -2762,14 +2851,7 @@ export default function App() {
                 <Switch value={crossfadeEnabled} onValueChange={setCrossfadeEnabled} trackColor={{ false: '#252545', true: moodColor }} thumbColor="#ffffff" />
               </View>
 
-              {/* Equalizer */}
-              <TouchableOpacity style={[styles.settingRow, { marginBottom: 15, backgroundColor: theme.card }]} onPress={() => setShowEqualizerModal(true)}>
-                <View style={styles.textGroup}>
-                  <Text style={[styles.settingTitle, { color: theme.text }]}>🎛️ Equalizer</Text>
-                  <Text style={[styles.settingDesc, { color: theme.subtext }]}>Adjust Bass, Mid & Treble</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={theme.subtext} />
-              </TouchableOpacity>
+              {/* Equalizer removed as not supported by TrackPlayer natively */}
 
               {/* Stats */}
               <View style={[styles.settingRow, { marginBottom: 15, flexDirection: 'column', alignItems: 'flex-start', backgroundColor: theme.card }]}>
@@ -2796,24 +2878,21 @@ export default function App() {
           style={{ marginHorizontal: 10, marginBottom: 8 }}
           {...miniPlayerPan.panHandlers}
         >
-          {/* Circular ring sits OUTSIDE overflow:hidden so arcs are never clipped */}
+          {/* Circular ring using react-native-svg for smooth rendering */}
           {(() => {
-            const SZ = 62; const SW = 3;
+            const SZ = 62; const SW = 3; const radius = (SZ - SW) / 2;
+            const circumference = 2 * Math.PI * radius;
             const prog = Math.min(Math.max(getProgressPercent() / 100, 0), 1);
-            const halfDeg = prog > 0.5 ? 180 : prog * 360;
-            const fullDeg = prog > 0.5 ? (prog - 0.5) * 360 : 0;
+            const strokeDashoffset = circumference - (prog * circumference);
             return (
               <View style={{ position: 'absolute', left: 14, top: '50%', marginTop: -(SZ/2), width: SZ, height: SZ, zIndex: 10, pointerEvents: 'none' }}>
-                {/* Track ring dim */}
-                <View style={{ position: 'absolute', width: SZ, height: SZ, borderRadius: SZ/2, borderWidth: SW, borderColor: 'rgba(255,255,255,0.14)' }} />
-                {/* Right half progress arc */}
-                <View style={{ position: 'absolute', right: 0, width: SZ/2, height: SZ, overflow: 'hidden' }}>
-                  <View style={{ position: 'absolute', left: -(SZ/2), width: SZ, height: SZ, borderRadius: SZ/2, borderWidth: SW, borderColor: moodColor, borderLeftColor: 'transparent', borderBottomColor: 'transparent', transform: [{ rotate: `${fullDeg}deg` }] }} />
-                </View>
-                {/* Left half progress arc */}
-                <View style={{ position: 'absolute', left: 0, width: SZ/2, height: SZ, overflow: 'hidden' }}>
-                  <View style={{ position: 'absolute', width: SZ, height: SZ, borderRadius: SZ/2, borderWidth: SW, borderColor: moodColor, borderRightColor: 'transparent', borderTopColor: 'transparent', transform: [{ rotate: `${halfDeg - 180}deg` }] }} />
-                </View>
+                <Svg width={SZ} height={SZ}>
+                  <Circle cx={SZ/2} cy={SZ/2} r={radius} stroke="rgba(255,255,255,0.14)" strokeWidth={SW} fill="none" />
+                  <Circle cx={SZ/2} cy={SZ/2} r={radius} stroke={moodColor} strokeWidth={SW} fill="none"
+                    strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} strokeLinecap="round"
+                    rotation="-90" origin={`${SZ/2}, ${SZ/2}`}
+                  />
+                </Svg>
               </View>
             );
           })()}
