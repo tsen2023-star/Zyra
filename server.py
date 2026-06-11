@@ -691,13 +691,19 @@ def jiosaavn_get_audio_url(song_id: str) -> str:
         data = resp.json()
         song_data = data.get(song_id, {})
         encrypted = song_data.get('encrypted_media_url', '')
-        if not encrypted:
-            direct = song_data.get('media_url', '')
-            if direct:
-                set_cached_url(song_id, direct)
-                return direct
-            return ''
-        audio_url = decrypt_jiosaavn_url(encrypted)
+        audio_url = ''
+        if encrypted:
+            audio_url = decrypt_jiosaavn_url(encrypted)
+        
+        if not audio_url:
+            # Fallback to preview url hack
+            preview = song_data.get('media_preview_url', '')
+            if preview:
+                audio_url = preview.replace('preview.saavncdn.com', 'aac.saavncdn.com').replace('_96_p.mp4', '_320.mp4')
+                
+        if not audio_url:
+            audio_url = song_data.get('media_url', '')
+            
         if audio_url:
             set_cached_url(song_id, audio_url)
         return audio_url
@@ -1544,18 +1550,9 @@ def stream_audio():
                 print(f'yt-dlp extraction error: {e}')
         source = 'youtube'
     else:
-        # 1️⃣  saavn.dev (BlackHole API) — 320kbps, no DES decryption
-        audio_url = saavn_dev_get_song_url(song_id)
-        source    = 'jiosaavn'
-
-        # 2️⃣  For JioSaavn: 302 redirect directly to CDN (no proxying = instant playback)
-        if audio_url:
-            print(f'JioSaavn CDN redirect: {song_id}')
-            return redirect(audio_url, code=302)
-
-        # 3️⃣  Legacy JioSaavn DES fallback
-        print(f'saavn.dev failed for {song_id} — trying legacy JioSaavn')
+        # 1️⃣ JioSaavn Direct Decryption
         audio_url = jiosaavn_get_audio_url(song_id)
+        source    = 'jiosaavn'
         if audio_url:
             return redirect(audio_url, code=302)
 
