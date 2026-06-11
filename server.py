@@ -1609,48 +1609,42 @@ def refresh_url():
 
 @app.route('/api/trending', methods=['GET'])
 def get_trending():
-    """Return top trending songs (uses saavn.dev chart/top songs)."""
+    """Return top trending songs (uses a popular JioSaavn editorial playlist)."""
     try:
-        # Use saavn.dev to get chart songs (top 20 trending)
-        r = http_requests.get(
-            f'{SAAVNDEV_BASE}/api/charts',
-            timeout=10,
-        )
+        # Use a high-quality JioSaavn playlist: Weekly Top Songs (id: 154133486 or similar)
+        # We will use jiosaavn_search for "Weekly Top Songs" to get the first playlist, then get its songs.
         charts = []
-        if r.status_code == 200:
-            data = r.json()
-            charts_data = data.get('data', [])
-            if charts_data:
-                # Pick the first chart (usually top songs)
-                first_chart_id = charts_data[0].get('id', '') if isinstance(charts_data, list) else ''
-                if first_chart_id:
-                    r2 = http_requests.get(f'{SAAVNDEV_BASE}/api/playlists', params={'id': first_chart_id, 'limit': 20}, timeout=10)
-                    if r2.status_code == 200:
-                        pdata = r2.json()
-                        songs_raw = (pdata.get('data') or {}).get('songs', [])
-                        for song in songs_raw[:20]:
-                            sid = song.get('id', '')
-                            if not sid: continue
-                            artists = song.get('artists', {})
-                            primary = artists.get('primary', [])
-                            artist = ', '.join([a['name'] for a in primary if a.get('name')])
-                            title = clean_html(song.get('name', '') or 'Unknown')
-                            image = _sd_best_image(song.get('image', []))
-                            url   = _sd_best_url(song.get('downloadUrl', []))
-                            charts.append({'id': sid, 'title': title, 'artist': artist, 'image': image, 'url': url or None, 'source': 'jiosaavn'})
-        # Fallback: search for generic trending hits
+        import urllib.request, urllib.parse
+        search_url = f"https://www.jiosaavn.com/api.php?__call=search.getPlaylistResults&q={urllib.parse.quote('top jiosaavn')}&_format=json&_marker=0&ctx=android"
+        sr = http_requests.get(search_url)
+        sdata = sr.json()
+        playlists = sdata.get('results', [])
+        if playlists:
+            pid = playlists[0].get('id')
+            pl_url = f"https://www.jiosaavn.com/api.php?__call=playlist.getDetails&listid={pid}&_format=json&_marker=0&ctx=android"
+            pr = http_requests.get(pl_url)
+            pdata = pr.json()
+            songs_raw = pdata.get('list', [])
+            for song in songs_raw[:20]:
+                sid = song.get('id', '')
+                if not sid: continue
+                title = clean_html(song.get('title', song.get('song', 'Unknown')))
+                artist = clean_html(song.get('subtitle', song.get('singers', '')))
+                image = song.get('image', '').replace('150x150', '500x500')
+                url = _sd_best_url([{'url': song.get('media_preview_url', '')}]) if song.get('media_preview_url') else None
+                if not url:
+                    # try to decrypt if needed, or fallback to frontend fetching stream url
+                    pass
+                # Frontend fetchStreamUrl will handle the URL if it's missing, just send id
+                charts.append({'id': sid, 'title': title, 'artist': artist, 'image': image, 'url': url, 'source': 'jiosaavn'})
+
         if not charts:
-            charts = saavn_dev_search('trending hits 2024', limit=20)
-            if not charts:
-                charts = jiosaavn_search('latest bollywood hits')
+            charts = jiosaavn_search('latest bollywood hits')
         return jsonify({'success': True, 'songs': charts})
     except Exception as e:
         print(f'Trending error: {e}')
         # Always return something
-        fallback = saavn_dev_search('trending hits 2024', limit=20)
-        if not fallback:
-            fallback = jiosaavn_search('latest bollywood hits')
-        return jsonify({'success': True, 'songs': fallback})
+        return jsonify({'success': True, 'songs': jiosaavn_search('latest bollywood hits')})
 
 
 # ─── Lyrics ───────────────────────────────────────────────────────────────────
