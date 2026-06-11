@@ -504,14 +504,20 @@ export default function App() {
   }, [posRaw, parsedLyrics]);
 
   // ─── Save position every 5s → restore mini player on app reopen ───────────────
+  const posRawRef = useRef(0);
+  useEffect(() => { posRawRef.current = posRaw; }, [posRaw]);
+
   useEffect(() => {
-    if (!activeTrack?.id || posRaw <= 0) return;
+    if (!activeTrack?.id) return;
     const tid = setInterval(() => {
-      AsyncStorage.setItem('lastPosition_' + activeTrack.id, String(posRaw)).catch(() => {});
-      AsyncStorage.setItem('lastActiveTrack', JSON.stringify(activeTrack)).catch(() => {});
+      const currentPos = posRawRef.current;
+      if (currentPos > 0) {
+        AsyncStorage.setItem('lastPosition_' + activeTrack.id, String(currentPos)).catch(() => {});
+        AsyncStorage.setItem('lastActiveTrack', JSON.stringify(activeTrack)).catch(() => {});
+      }
     }, 5000);
     return () => clearInterval(tid);
-  }, [activeTrack?.id, posRaw]);
+  }, [activeTrack?.id]);
 
   // ─── Initial load ─────────────────────────────────────────────────────────────
   useEffect(() => {
