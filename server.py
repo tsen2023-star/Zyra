@@ -1244,13 +1244,66 @@ def suggest():
                 title = item.get('title', '')
                 title = html.unescape(title)
                 # Remove html tags
-                title = _re.sub(r'<[^>]+>', '', title)
+                title = re.sub(r'<[^>]+>', '', title)
                 if title and title not in suggestions:
                     suggestions.append(title)
         return jsonify({'success': True, 'data': suggestions[:10]})
     except Exception as e:
         print("Suggest error:", e)
         return jsonify({'success': True, 'data': []})
+
+
+@app.route('/api/playlists/search', methods=['GET'])
+def search_playlists_jiosaavn():
+    query = request.args.get('query', '')
+    limit = int(request.args.get('limit', 20))
+    import urllib.request, urllib.parse, json
+    try:
+        url = f'https://www.jiosaavn.com/api.php?__call=search.getPlaylistResults&q={urllib.parse.quote(query)}&p=1&n={limit}&_format=json&_marker=0&ctx=android'
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        resp = urllib.request.urlopen(req).read().decode('utf-8')
+        data = json.loads(resp)
+        results = data.get('results', [])
+        playlists = []
+        for p in results:
+            img = p.get('image', '').replace('150x150', '500x500').replace('50x50', '500x500')
+            playlists.append({
+                'id': p.get('listid'),
+                'title': p.get('listname') or p.get('title') or '',
+                'subtitle': 'JioSaavn Playlist',
+                'image': [{'quality': '500x500', 'url': img}]
+            })
+        return jsonify({'success': True, 'data': {'results': playlists}})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/playlists/<playlist_id>', methods=['GET'])
+def get_playlist_details_jiosaavn(playlist_id):
+    import urllib.request, json
+    try:
+        url = f'https://www.jiosaavn.com/api.php?__call=playlist.getDetails&listid={playlist_id}&_format=json&_marker=0&ctx=android'
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        resp = urllib.request.urlopen(req).read().decode('utf-8')
+        data = json.loads(resp)
+        songs = []
+        if 'list' in data:
+            raw_songs = data['list']
+        else:
+            raw_songs = [data[k] for k in data.keys() if k.isdigit()]
+            
+        for s in raw_songs:
+            img = s.get('image', '').replace('150x150', '500x500').replace('50x50', '500x500')
+            songs.append({
+                'id': s.get('id'),
+                'name': s.get('title') or s.get('song') or '',
+                'artists': {'primary': [{'name': s.get('primary_artists') or s.get('singers') or ''}]},
+                'image': [{'quality': '500x500', 'url': img}],
+                'downloadUrl': [{'quality': '320kbps', 'url': s.get('url') or s.get('perma_url') or ''}],
+                'duration': s.get('duration') or 0
+            })
+        return jsonify({'success': True, 'data': {'songs': songs}})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/search', methods=['GET'])
 def search():
@@ -1585,18 +1638,18 @@ def get_trending():
                             image = _sd_best_image(song.get('image', []))
                             url   = _sd_best_url(song.get('downloadUrl', []))
                             charts.append({'id': sid, 'title': title, 'artist': artist, 'image': image, 'url': url or None, 'source': 'jiosaavn'})
-        # Fallback: search for generic trending Bollywood
+        # Fallback: search for generic trending hits
         if not charts:
-            charts = saavn_dev_search('top bollywood songs 2024', limit=20)
+            charts = saavn_dev_search('trending hits 2024', limit=20)
             if not charts:
-                charts = jiosaavn_search('top hindi songs')
+                charts = jiosaavn_search('latest bollywood hits')
         return jsonify({'success': True, 'songs': charts})
     except Exception as e:
         print(f'Trending error: {e}')
         # Always return something
-        fallback = saavn_dev_search('top hindi songs', limit=20)
+        fallback = saavn_dev_search('trending hits 2024', limit=20)
         if not fallback:
-            fallback = jiosaavn_search('top hindi songs')
+            fallback = jiosaavn_search('latest bollywood hits')
         return jsonify({'success': True, 'songs': fallback})
 
 
