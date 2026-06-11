@@ -628,7 +628,8 @@ export default function App() {
         { key: 'punjabi', title: 'Punjabi Hits', subtitle: 'Bhangra beats' },
         { key: 'pop', title: 'Pop Sensations', subtitle: 'Top chart bangers' }
       ];
-      const results = await Promise.all(keywords.map(async (kw) => {
+      const results = [];
+      for (const kw of keywords) {
         try {
           const r = await fetch(`${BACKEND_URL}/api/playlists/search?query=${kw.key}&limit=20`);
           const j = await r.json();
@@ -638,12 +639,11 @@ export default function App() {
               const img = imgs.find((i: any) => i.quality === '500x500')?.url || imgs[imgs.length - 1]?.url || '';
               return { id: p.id, title: p.title || p.name || '', subtitle: p.subtitle || p.description || '', image: img };
             }).filter((p: any) => p.image);
-            return { title: kw.title, subtitle: kw.subtitle, items: playlists.sort(() => 0.5 - Math.random()).slice(0, 10) };
+            results.push({ title: kw.title, subtitle: kw.subtitle, items: playlists.sort(() => 0.5 - Math.random()).slice(0, 10) });
           }
         } catch {}
-        return null;
-      }));
-      setFeaturedPlaylists(results.filter(Boolean));
+      }
+      setFeaturedPlaylists(results);
     } catch (e) { console.error('Featured playlists error', e); }
   }, []);
 
