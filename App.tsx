@@ -56,6 +56,76 @@ function ZyraAlert({ visible, title, message, buttons, onDismiss }: ZyraAlertPro
   );
 }
 
+
+// --- GLOBAL FETCH INTERCEPTOR to reroute saavn.dev to Zyra-Backend ---
+const originalFetch = global.fetch;
+global.fetch = async (...args) => {
+  let [url, config] = args;
+  if (typeof url === 'string' && url.includes('saavn.dev')) {
+    // Reroute to backend
+    const originalUrl = url;
+    url = url.replace('https://saavn.dev', BACKEND_URL);
+    
+    // We must fix search/songs because backend uses /api/search
+    if (url.includes('/api/search/songs') || url.includes('/api/search/albums') || url.includes('/api/search/playlists') || url.includes('/api/search/artists')) {
+      url = url.replace('/api/search/songs', '/api/search');
+      url = url.replace('/api/search/albums', '/api/search');
+      url = url.replace('/api/search/playlists', '/api/search');
+      url = url.replace('/api/search/artists', '/api/search');
+      
+      const res = await originalFetch(url, config);
+      const clone = res.clone();
+      try {
+        const j = await clone.json();
+        // The frontend expects j.data.results, but backend returns j.data.songs, j.data.albums, etc.
+        if (j && j.data) {
+          if (originalUrl.includes('/search/songs') && j.data.songs) j.data.results = j.data.songs;
+          if (originalUrl.includes('/search/albums') && j.data.albums) j.data.results = j.data.albums;
+          if (originalUrl.includes('/search/playlists') && j.data.playlists) j.data.results = j.data.playlists;
+          if (originalUrl.includes('/search/artists') && j.data.artists) j.data.results = j.data.artists;
+        }
+        return new Response(JSON.stringify(j), { status: res.status, headers: res.headers });
+      } catch (e) {
+        return res;
+      }
+    }
+    
+    // Fix album details
+    if (url.includes('/api/albums?id=')) {
+      url = url.replace('/api/albums?id=', '/api/albums/');
+      const res = await originalFetch(url, config);
+      const clone = res.clone();
+      try {
+        const j = await clone.json();
+        // Frontend expects j.data.songs, backend returns j.album.songs
+        if (j && j.album) {
+          j.data = j.album;
+        }
+        return new Response(JSON.stringify(j), { status: res.status, headers: res.headers });
+      } catch(e) {
+        return res;
+      }
+    }
+
+    // Fix playlist details
+    if (url.includes('/api/playlists?id=')) {
+      url = url.replace('/api/playlists?id=', '/api/playlists/');
+      const res = await originalFetch(url, config);
+      const clone = res.clone();
+      try {
+        const j = await clone.json();
+        if (j && j.data && !j.data.songs) {
+          j.data.songs = j.data.results; // map back if needed
+        }
+        return new Response(JSON.stringify(j), { status: res.status, headers: res.headers });
+      } catch(e) {
+        return res;
+      }
+    }
+  }
+  return originalFetch(url, config);
+};
+
 export default function App() {
   const [isAppReady, setIsAppReady] = useState(false);
 
@@ -2047,7 +2117,7 @@ export default function App() {
                           </View>
                           <View style={{ flex: 1 }}>
                             <Text numberOfLines={1} style={{ color: theme.text, fontSize: 15, fontWeight: '700' }}>{album.name}</Text>
-                            <Text style={{ color: theme.subtext, fontSize: 12, fontStyle: 'italic' }}>{album.songs?.length || 0} songs</Text>
+                            <Text style={{ color: theme.subtext, fontSize: 12, fontStyle: 'italic' }}>{album.artist || 'Unknown Artist'}</Text>
                           </View>
                           <Ionicons name="ellipsis-vertical" size={18} color={theme.subtext} />
                         </TouchableOpacity>
@@ -2067,7 +2137,7 @@ export default function App() {
                           onPress={() => fetchArtist(artist)}>
                           <View style={{ width: 52, height: 52, borderRadius: 26, overflow: 'hidden', backgroundColor: moodColor + '33', marginRight: 14 }}>
                             {artist.image
-                              ? <Image source={{ uri: artist.image }} style={{ width: 52, height: 52, borderRadius: 26 }} />
+                              ? <Image source={{ uri: artist.name === 'KK' ? 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cc/KK_MTV_India.jpg/800px-KK_MTV_India.jpg' : artist.image }} style={{ width: 52, height: 52, borderRadius: 26 }} />
                               : <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><Text style={{ color: '#fff', fontSize: 22, fontWeight: 'bold' }}>{artist.name.charAt(0).toUpperCase()}</Text></View>}
                           </View>
                           <View style={{ flex: 1 }}>
@@ -2395,7 +2465,7 @@ export default function App() {
                           style={{ alignItems: 'center', width: '30%' }}
                           onPress={() => fetchArtist(artist)}>
                           <View style={{ width: 80, height: 80, borderRadius: 40, overflow: 'hidden', backgroundColor: theme.surface, borderWidth: 2.5, borderColor: moodColor + '55', marginBottom: 8 }}>
-                            {artist.image ? (<Image source={{ uri: artist.image }} style={{ width: 80, height: 80, borderRadius: 40 }} />) : (
+                            {artist.image ? (<Image source={{ uri: artist.name === 'KK' ? 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cc/KK_MTV_India.jpg/800px-KK_MTV_India.jpg' : artist.image }} style={{ width: 80, height: 80, borderRadius: 40 }} />) : (
                               <View style={{ width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center', backgroundColor: moodColor + '33' }}>
                                 <Text style={{ color: '#fff', fontSize: 28, fontWeight: 'bold' }}>{artist.name.charAt(0).toUpperCase()}</Text>
                               </View>
