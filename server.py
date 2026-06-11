@@ -322,8 +322,7 @@ def get_album_details(album_id):
             image = upgrade_image_url(s.get('image', ''))
             
             # Fetch direct decrypted URL if possible
-            enc_url = s.get('encrypted_media_url', '')
-            audio_url = decrypt_url(enc_url) if enc_url else ''
+            audio_url = ''
             
             songs.append({
                 'id': s_id,
