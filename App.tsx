@@ -630,7 +630,7 @@ export default function App() {
       ];
       const results = await Promise.all(keywords.map(async (kw) => {
         try {
-          const r = await fetch(`https://saavn.dev/api/search/playlists?query=${kw.key}&limit=20`);
+          const r = await fetch(`${BACKEND_URL}/api/playlists/search?query=${kw.key}&limit=20`);
           const j = await r.json();
           if (j.success && j.data?.results) {
             const playlists = j.data.results.map((p: any) => {
@@ -2185,7 +2185,7 @@ export default function App() {
                                 setIsSearching(true);
                                 setSearchQuery(pl.title);
                                 try {
-                                  const r = await fetch(`https://saavn.dev/api/playlists?id=${pl.id}&limit=50`);
+                                  const r = await fetch(`${BACKEND_URL}/api/playlists/${pl.id}`);
                                   const pdata = await r.json();
                                   const songsRaw = pdata.data?.songs || [];
                                   if (songsRaw.length > 0) {

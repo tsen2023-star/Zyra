@@ -114,7 +114,7 @@ android {
         applicationId 'com.babulu2006.zyramusic'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
+        versionCode 3
         versionName "2.1.0"
     }
     signingConfigs {
