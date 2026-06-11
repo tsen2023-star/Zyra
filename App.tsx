@@ -727,9 +727,18 @@ export default function App() {
   const fetchSuggestions = async (query: string) => {
     if (!query.trim()) { setSearchSuggestions([]); return; }
     try {
-      const resp = await fetch(`${BACKEND_URL}/api/suggest?query=${encodeURIComponent(query)}`);
+      const resp = await fetch(`https://www.jiosaavn.com/api.php?__call=autocomplete.get&query=${encodeURIComponent(query)}&_format=json&_marker=0&ctx=android`);
       const json = await resp.json();
-      if (json.success) setSearchSuggestions(json.data || []);
+      const suggestions: string[] = [];
+      ['topquery', 'songs', 'albums', 'artists'].forEach(k => {
+        const items = json[k]?.data || [];
+        items.forEach((item: any) => {
+          let title = item.title || '';
+          title = title.replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+          if (title && !suggestions.includes(title)) suggestions.push(title);
+        });
+      });
+      setSearchSuggestions(suggestions.slice(0, 10));
     } catch {}
   };
 
@@ -1961,7 +1970,7 @@ export default function App() {
                   : null}
             </View>
 
-            {searchQuery.trim().length > 0 ? (
+            {isSearchFocused || searchQuery.trim().length > 0 ? (
               <View style={{ flex: 1 }}>
                 {/* ── Compact filter chips — RIGHT below search bar ── */}
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}
