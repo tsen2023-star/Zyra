@@ -287,39 +287,59 @@ def saavn_dev_album_search(query: str, limit: int = 5) -> list:
         print(f'saavn.dev album search error: {e}')
         return []
 
-
-def saavn_dev_album_songs(album_id: str) -> list:
-    """Fetch all songs for an album/movie from saavn.dev (includes direct CDN URLs)."""
+@app.route('/api/albums/<album_id>', methods=['GET'])
+def get_album_details(album_id):
+    """Fetch album details and its tracks from JioSaavn natively."""
     try:
-        r = http_requests.get(
-            f'{SAAVNDEV_BASE}/api/albums',
-            params={'id': album_id},
-            timeout=12,
+        resp = http_requests.get(
+            'https://www.jiosaavn.com/api.php',
+            params={
+                '__call': 'content.getAlbumDetails',
+                'albumid': album_id,
+                '_format': 'json',
+                '_marker': '0',
+                'ctx': 'android'
+            },
+            headers=JIOSAAVN_HEADERS, timeout=8
         )
-        if r.status_code != 200:
-            return []
-        data = r.json()
-        album_data = (data.get('data') or {})
-        songs_raw  = album_data.get('songs', [])
+        data = resp.json()
+        
+        album_info = {
+            'id': data.get('albumid'),
+            'name': clean_html(data.get('title', '') or data.get('name', '') or ''),
+            'year': data.get('year', ''),
+            'artist': clean_html(data.get('primary_artists', '')),
+            'image': upgrade_image_url(data.get('image', '')),
+        }
+        
+        songs_raw = data.get('songs', [])
         songs = []
-        for song in songs_raw:
-            sid = song.get('id', '')
-            if not sid:
-                continue
-            a_info  = song.get('artists', {})
-            primary = a_info.get('primary', [])
-            artist  = ', '.join([a['name'] for a in primary if a.get('name')]) or 'Unknown'
-            title   = clean_html(song.get('name', '') or 'Unknown')
-            image   = _sd_best_image(song.get('image', []))
-            url     = _sd_best_url(song.get('downloadUrl', []))
+        for s in songs_raw:
+            s_id = s.get('id')
+            if not s_id: continue
+            title = clean_html(s.get('song', '') or s.get('title', '') or '')
+            artist = clean_html(s.get('primary_artists', '') or s.get('singers', '') or '')
+            image = upgrade_image_url(s.get('image', ''))
+            
+            # Fetch direct decrypted URL if possible
+            enc_url = s.get('encrypted_media_url', '')
+            audio_url = decrypt_url(enc_url) if enc_url else ''
+            
             songs.append({
-                'id': sid, 'title': title, 'artist': artist,
-                'image': image, 'url': url or None, 'source': 'jiosaavn',
+                'id': s_id,
+                'title': title,
+                'artist': artist,
+                'image': image,
+                'url': audio_url,
+                'duration': int(s.get('duration', 0)),
+                'source': 'jiosaavn'
             })
-        return songs
+            
+        album_info['songs'] = songs
+        return jsonify({'success': True, 'data': album_info})
     except Exception as e:
-        print(f'saavn.dev album songs error: {e}')
-        return []
+        print(f'Album fetch error: {e}')
+        return jsonify({'success': False, 'error': str(e)})
 
 
 # ─── Invidious instances (YouTube proxy — used for yt_ songs) ────────────────
@@ -517,51 +537,8 @@ def upgrade_image_url(url: str) -> str:
     # Handles: 50x50, 150x150, 100x100, 175x175, etc.
     return re.sub(r'\d+x\d+', '500x500', url)
 
-def jiosaavn_search(query: str):
-    """Search JioSaavn. Uses search.getResults (proper API) with autocomplete fallback."""
-    # ── Primary: proper full-text search API ──
-    try:
-        resp = http_requests.get(
-            'https://www.jiosaavn.com/api.php',
-            params={
-                '__call': 'search.getResults',
-                'p': '1',
-                'q': query,
-                'n': '20',
-                '_format': 'json',
-                '_marker': '0',
-                'ctx': 'android',
-            },
-            headers=JIOSAAVN_HEADERS, timeout=8
-        )
-        data = resp.json()
-        songs_raw = data.get('results', [])
-        results = []
-        for song in songs_raw[:15]:
-            song_id = song.get('id', '')
-            if not song_id:
-                continue
-            # NOTE: search.getResults uses 'song' not 'title' as the field name
-            title  = clean_html(
-                song.get('song', '') or
-                song.get('title', '') or 'Unknown'
-            )
-            mi     = song.get('more_info', {})
-            artist = clean_html(
-                mi.get('singers', '') or
-                mi.get('primary_artists', '') or
-                song.get('primary_artists', '') or
-                song.get('description', '') or 'Unknown'
-            )
-            image  = upgrade_image_url(song.get('image', ''))
-            if title and title != 'Unknown':
-                results.append({'id': song_id, 'title': title, 'artist': artist, 'image': image, 'url': None, 'source': 'jiosaavn'})
-        if results:
-            return results
-    except Exception as e:
-        print(f'JioSaavn search.getResults error: {e}')
-
-    # ── Fallback: autocomplete API ──
+def jiosaavn_search_all(query: str):
+    """Search JioSaavn autocomplete API for songs, albums, and artists all at once."""
     try:
         resp = http_requests.get(
             'https://www.jiosaavn.com/api.php',
@@ -570,19 +547,41 @@ def jiosaavn_search(query: str):
             headers=JIOSAAVN_HEADERS, timeout=8
         )
         data = resp.json()
+        
+        # ── Parse Songs ──
         songs_raw = data.get('songs', {}).get('data', [])
-        results = []
-        for song in songs_raw[:10]:
+        songs = []
+        for song in songs_raw[:15]:
             song_id = song.get('id', '')
             title   = clean_html(song.get('title', '') or song.get('song', '') or 'Unknown')
             artist  = clean_html(song.get('more_info', {}).get('singers', '') or song.get('description', '') or 'Unknown')
             image   = upgrade_image_url(song.get('image', ''))
-            results.append({'id': song_id, 'title': title, 'artist': artist, 'image': image, 'url': None, 'source': 'jiosaavn'})
-        return results
+            songs.append({'id': song_id, 'title': title, 'artist': artist, 'image': image, 'url': None, 'source': 'jiosaavn'})
+            
+        # ── Parse Albums ──
+        albums_raw = data.get('albums', {}).get('data', [])
+        albums = []
+        for alb in albums_raw[:10]:
+            alb_id = alb.get('id', '')
+            title  = clean_html(alb.get('title', '') or 'Unknown')
+            music  = clean_html(alb.get('music', '') or alb.get('description', '') or 'Unknown')
+            image  = upgrade_image_url(alb.get('image', ''))
+            albums.append({'id': alb_id, 'name': title, 'artist': music, 'image': image, 'source': 'jiosaavn'})
+            
+        # ── Parse Artists ──
+        artists_raw = data.get('artists', {}).get('data', [])
+        artists = []
+        for art in artists_raw[:10]:
+            art_id = art.get('id', '')
+            title  = clean_html(art.get('title', '') or 'Unknown')
+            image  = upgrade_image_url(art.get('image', ''))
+            # Some artists have no image or default image, keep it
+            artists.append({'id': art_id, 'name': title, 'image': image, 'source': 'jiosaavn'})
+
+        return {'songs': songs, 'albums': albums, 'artists': artists}
     except Exception as e:
         print(f'JioSaavn autocomplete fallback error: {e}')
-        return []
-
+        return {'songs': [], 'albums': [], 'artists': []}
 
 def youtube_search_songs(query: str, max_results: int = 15):
     """Search YouTube Music for songs — returns exact Bollywood matches with clean metadata."""
@@ -1313,42 +1312,29 @@ def get_playlist_details_jiosaavn(playlist_id):
 
 @app.route('/api/search', methods=['GET'])
 def search():
-    """Search songs via saavn.dev → JioSaavn fallback → YouTube. Also returns albums for movie searches."""
+    """Search songs, albums, and artists via instant JioSaavn autocomplete fallback to YouTube."""
     query = request.args.get('query', '').strip()
     if not query:
         return jsonify({'success': False, 'error': 'No query provided'})
 
-    cached        = get_cached_search(query)
-    cached_albums = get_cached_search(f'albums:{query}')
+    cached = get_cached_search(query)
     if cached is not None:
-        return jsonify({'success': True, 'data': {'results': cached, 'albums': cached_albums or []}})
+        return jsonify({'success': True, 'data': cached})
 
     try:
-        # ── Song results ──
-        results = saavn_dev_search(query, limit=20)
-        if not results:
-            results = jiosaavn_search(query)
-        if not results:
-            results = youtube_search_songs(query, max_results=15)
-        if results:
+        # ── Fast JioSaavn Autocomplete Search ──
+        results = jiosaavn_search_all(query)
+        
+        # If no songs found, fallback to YouTube
+        if not results['songs']:
+            yt_songs = youtube_search_songs(query, max_results=15)
+            if yt_songs:
+                results['songs'] = yt_songs
+
+        if results['songs'] or results['albums'] or results['artists']:
             set_cached_search(query, results)
 
-        # ── Album/movie results (for grouping) ──
-        albums_out = []
-        album_candidates = saavn_dev_album_search(query, limit=4)
-        for alb in album_candidates:
-            songs = saavn_dev_album_songs(alb['id'])
-            if songs:
-                albums_out.append({
-                    'id':    alb['id'],
-                    'name':  alb['name'],
-                    'image': alb['image'],
-                    'songs': songs,
-                })
-        if albums_out:
-            set_cached_search(f'albums:{query}', albums_out)
-
-        return jsonify({'success': True, 'data': {'results': results, 'albums': albums_out}})
+        return jsonify({'success': True, 'data': results})
     except Exception as e:
         print(f'Search error: {e}')
         return jsonify({'success': False, 'error': str(e)})
