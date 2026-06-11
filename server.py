@@ -1588,11 +1588,15 @@ def get_trending():
         # Fallback: search for generic trending Bollywood
         if not charts:
             charts = saavn_dev_search('top bollywood songs 2024', limit=20)
+            if not charts:
+                charts = jiosaavn_search('top hindi songs')
         return jsonify({'success': True, 'songs': charts})
     except Exception as e:
         print(f'Trending error: {e}')
         # Always return something
         fallback = saavn_dev_search('top hindi songs', limit=20)
+        if not fallback:
+            fallback = jiosaavn_search('top hindi songs')
         return jsonify({'success': True, 'songs': fallback})
 
 
