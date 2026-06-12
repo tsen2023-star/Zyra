@@ -161,7 +161,8 @@ export default function App() {
   const [activeTrack,  setActiveTrack]      = useState<any>(null);
   const [isLoading,    setIsLoading]        = useState(false);
   const [isYoutubeFallback, setIsYoutubeFallback] = useState(false);
-  const progressBarWidthRef = useRef<number>(0);
+  const navBarWidthRef       = useRef<number>(0);
+  const sessionHistoryRef    = useRef<any[]>([]);
 
   // ── RNTP hooks (must be at top level) ──
   const playerState = usePlaybackState();
@@ -351,7 +352,6 @@ export default function App() {
   const eqBar4 = useRef(new Animated.Value(3)).current;
   // ── [VISUAL] Nav pill position ──
   const navPillAnim = useRef(new Animated.Value(0)).current;
-  const navBarWidthRef = useRef(0);
 
   // ─── Nav pill — animate when screen changes (pixel-based, no stale closure) ──
   const navScreenToIdx = useCallback((screen: string) => {
@@ -1316,13 +1316,6 @@ export default function App() {
   // ─── Add to Next (inserts song at next position in TrackPlayer queue) ───────
   const addToNext = async (song: any) => {
     if (!song) return;
-    if (query.trim().length > 1) {
-      const r = await fetch(`https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&q=${encodeURIComponent(query)}`);
-      const data = await r.json();
-      if (data && data[1]) {
-        setSearchSuggestions(data[1]);
-      }
-    }
     try {
       const queue = await TrackPlayer.getQueue();
       const currentIdx = await TrackPlayer.getActiveTrackIndex() ?? 0;
@@ -1671,16 +1664,40 @@ export default function App() {
   const playNext = async () => {
     if (!activeTrack) return;
     if (repeatMode === 'one') { await TrackPlayer.seekTo(0); await TrackPlayer.play(); return; }
-    // [NEW] Send skip signal
+    
     sendSkipSignal(activeTrack.id);
-    try { await TrackPlayer.skipToNext(); }
-    catch { await handleAutoNext(); }
+
+    // Play from genre queue if available
+    if (autoplayQueue && autoplayQueue.length > 0) {
+       const nextSong = autoplayQueue[0];
+       setAutoplayQueue(prev => prev.slice(1));
+       await handleTrackPress(nextSong);
+       return;
+    }
+    
+    // Fallback to auto next
+    await handleAutoNext();
   };
 
   const playPrevious = async () => {
     if (!activeTrack) return;
-    if (posRaw > 3) await TrackPlayer.seekTo(0);
-    else { try { await TrackPlayer.skipToPrevious(); } catch { await TrackPlayer.seekTo(0); } }
+    if (posRaw > 3) {
+      await TrackPlayer.seekTo(0);
+      return;
+    }
+    
+    // Pop current song
+    if (sessionHistoryRef.current.length > 0 && sessionHistoryRef.current[sessionHistoryRef.current.length - 1].id === activeTrack.id) {
+       sessionHistoryRef.current.pop();
+    }
+    
+    // Get previous song
+    if (sessionHistoryRef.current.length > 0) {
+       const prevSong = sessionHistoryRef.current.pop(); // Pop it so handleTrackPress can re-add it
+       await handleTrackPress(prevSong);
+    } else {
+       await TrackPlayer.seekTo(0);
+    }
   };
 
   playNextRef.current = playNext;
@@ -1690,59 +1707,21 @@ export default function App() {
     if (!activeTrack) return;
     const artist = (activeTrack.artist || '').split(',')[0].trim();
     const title  = activeTrack.title || '';
-    // 1. Smart backend autoplay
-    if (false && smartAutoplay) {
-      try {
-        setIsLoading(true);
-        const qs  = `songId=${activeTrack.id}&userId=${userId||''}&mood=${currentMood}`;
-        const res = await fetch(`${BACKEND_URL}/api/autoplay?${qs}`);
-        const json = await res.json();
-        if (json.success && json.song) {
-          setAutoplayReason(json.reason);
-          setCurrentMood(json.mood || 'default');
-          await handleTrackPress(json.song);
-          return;
-        }
-      } catch {}
-      finally { setIsLoading(false); }
-    }
-    // 2. Same-artist songs from saavn.dev
-    const mapSaavn = (s: any) => {
-      const dlUrls: any[] = s.downloadUrl || [];
-      const imgs: any[]   = s.image || [];
-      const url   = dlUrls.find((u: any) => u.quality === '320kbps')?.url || dlUrls[dlUrls.length-1]?.url || '';
-      const image = imgs.find((i: any) => i.quality === '500x500')?.url || imgs[imgs.length-1]?.url || '';
-      const ar    = s.artists?.primary?.map((a: any) => a.name).join(', ') || '';
-      return { id: s.id, title: s.name || '', artist: ar, image, url, duration: s.duration || 0 };
-    };
-    if (artist) {
-      try {
-        const r = await fetch(`https://saavn.dev/api/search/songs?query=${encodeURIComponent(artist + ' songs')}&limit=20`);
-        const j = await r.json();
-        if (j.success && j.data?.results?.length > 0) {
-          const pool = j.data.results
-            .filter((s: any) => s.id !== activeTrack.id)
-            .map(mapSaavn)
-            .filter((s: any) => s.url);
-          if (pool.length > 0) {
-            const pick = pool[Math.floor(Math.random() * Math.min(pool.length, 10))];
-            await handleTrackPress(pick);
-            return;
-          }
-        }
-      } catch {}
-    }
-    // 3. Genre-related title words
+    
+    // Use backend queue first if available
     try {
-      const words = title.split(' ').slice(0, 2).join(' ');
-      const r = await fetch(`https://saavn.dev/api/search/songs?query=${encodeURIComponent(words)}&limit=20`);
-      const j = await r.json();
-      if (j.success && j.data?.results?.length > 0) {
-        const pool = j.data.results.filter((s: any) => s.id !== activeTrack.id).map(mapSaavn).filter((s: any) => s.url);
-        if (pool.length > 0) { await handleTrackPress(pool[Math.floor(Math.random() * Math.min(pool.length, 8))]); return; }
+      const qs  = `songId=${activeTrack.id}&userId=${userId||''}&mood=${currentMood}`;
+      const res = await fetch(`${BACKEND_URL}/api/recommendations/queue?${qs}`);
+      const json = await res.json();
+      if (json.success && json.queue && json.queue.length > 0) {
+        const nextSong = json.queue[0];
+        setAutoplayQueue(json.queue.slice(1));
+        await handleTrackPress(nextSong);
+        return;
       }
     } catch {}
-    // 4. Backend random fallback
+
+    // Fallback: Random song
     try {
       const res  = await fetch(`${BACKEND_URL}/api/random`);
       const json = await res.json();
@@ -3089,7 +3068,7 @@ export default function App() {
             </View>
 
             {/* Playback controls */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0, marginTop: 35 }}>
               <TouchableOpacity onPress={playPrevious} hitSlop={{ top:14, bottom:14, left:8, right:8 }}>
                 <Ionicons name="play-skip-back" size={20} color="rgba(255,255,255,0.80)" />
               </TouchableOpacity>
@@ -3543,6 +3522,35 @@ export default function App() {
                 <Text style={{ color: '#555', fontSize: 13, marginTop: 8 }}>Smart queue will appear here</Text>
               </View>
             )
+          )}
+
+          {/* Lyrics Tab */}
+          {playerTab === 'lyrics' && (
+            <View style={styles.queueContainer}>
+              {lyricsLoading ? (
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                  <ActivityIndicator color={moodColor} />
+                  <Text style={{ color: '#666', marginTop: 8, fontSize: 13 }}>Fetching lyrics...</Text>
+                </View>
+              ) : lyrics ? (
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+                  {parsedLyrics.length > 0 ? (
+                    parsedLyrics.map((l, i) => (
+                      <TouchableOpacity key={i} onPress={() => TrackPlayer.seekTo(l.time)} style={{ paddingVertical: 6 }}>
+                        <Text style={{ color: i === currentLyricIndex ? moodColor : '#aaa', fontSize: i === currentLyricIndex ? 18 : 15, fontWeight: i === currentLyricIndex ? '700' : '500', textAlign: 'center' }}>{l.text}</Text>
+                      </TouchableOpacity>
+                    ))
+                  ) : (
+                    <Text style={{ color: '#ccc', fontSize: 15, lineHeight: 24, textAlign: 'center' }}>{lyrics}</Text>
+                  )}
+                </ScrollView>
+              ) : (
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                  <Ionicons name="document-text-outline" size={40} color="#333" />
+                  <Text style={{ color: '#555', fontSize: 13, marginTop: 8 }}>No lyrics found</Text>
+                </View>
+              )}
+            </View>
           )}
 
           {/* Related Songs Tab */}
