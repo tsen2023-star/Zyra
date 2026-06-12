@@ -730,12 +730,7 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        await TrackPlayer.setupPlayer({
-          minBuffer: 1,
-          maxBuffer: 15,
-          playBuffer: 0.1,
-          backBuffer: 0,
-        });
+        await TrackPlayer.setupPlayer();
         await TrackPlayer.updateOptions({
           capabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext, Capability.SkipToPrevious, Capability.Stop, Capability.SeekTo],
           compactCapabilities: [Capability.SkipToPrevious, Capability.Play, Capability.SkipToNext],
@@ -1003,7 +998,7 @@ export default function App() {
     if (downloads.some(d => d.id === song.id)) { showAlert('Already Downloaded', 'This song is already saved offline.'); return; }
     try {
       showAlert('Downloading', 'Please wait, downloading song...');
-      const fileUri = FileSystem.documentDirectory + `zyra_${song.id}.mp3`;
+      const fileUri = FileSystem.documentDirectory + `zyra_${song.id}.m4a`;
       const titleEnc  = encodeURIComponent(song.title  || '');
       const artistEnc = encodeURIComponent(song.artist || '');
       const urlToDownload = `${BACKEND_URL}/api/stream?id=${song.id}&title=${titleEnc}&artist=${artistEnc}`;
@@ -1166,7 +1161,7 @@ export default function App() {
 
   // ─── Stream URL resolver (with audio quality) ────────────────────────────────
   const resolveStreamUrl = useCallback(async (song: any): Promise<string> => {
-    const dl = downloads.find((d: any) => String(d.id) === String(song.id));
+    const dl = downloads.find((d: any) => d.id === song.id);
     if (dl?.localUri) return dl.localUri;
     if (song.id?.startsWith('yt_')) {
       const te = encodeURIComponent(song.title  || '');
@@ -1181,6 +1176,13 @@ export default function App() {
 
     const te = encodeURIComponent(song.title  || '');
     const ae = encodeURIComponent(song.artist || '');
+    // Resolve direct streaming URL to reduce TrackPlayer latency
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/stream?id=${song.id}&title=${te}&artist=${ae}&json=true`);
+      const data = await res.json();
+      if (data && data.url) return data.url;
+    } catch {}
+
     return `${BACKEND_URL}/api/stream?id=${song.id}&title=${te}&artist=${ae}`;
   }, [downloads, audioQuality]);
 
@@ -1314,6 +1316,13 @@ export default function App() {
   // ─── Add to Next (inserts song at next position in TrackPlayer queue) ───────
   const addToNext = async (song: any) => {
     if (!song) return;
+    if (query.trim().length > 1) {
+      const r = await fetch(`https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&q=${encodeURIComponent(query)}`);
+      const data = await r.json();
+      if (data && data[1]) {
+        setSearchSuggestions(data[1]);
+      }
+    }
     try {
       const queue = await TrackPlayer.getQueue();
       const currentIdx = await TrackPlayer.getActiveTrackIndex() ?? 0;
@@ -1486,14 +1495,6 @@ export default function App() {
       }
 
       setIsLoading(false);
-
-      // Queue next songs in background (only for albums/playlists, not search results)
-      const list = getActiveList();
-      if (list.length > 0) {
-        const idx = list.findIndex((s: any) => String(s.id) === String(track.id));
-        const nextSongs = idx >= 0 ? list.slice(idx + 1, idx + 6) : [];
-        if (nextSongs.length > 0) addSongsToQueue(nextSongs, 5);
-      }
 
       // Post history + detect mood + fetch related (background, non-blocking)
       if (userToken) {
@@ -2015,7 +2016,7 @@ export default function App() {
       <ZyraAlert visible={alertVisible} title={alertTitle} message={alertMessage} buttons={alertButtons} onDismiss={() => setAlertVisible(false)} />
 
       {/* HEADER */}
-      <View style={[styles.header, { backgroundColor: theme.header }]}>
+      <View style={[styles.header, { backgroundColor: theme.header, paddingTop: Platform.OS === 'ios' ? 45 : 10 }]}>
         {sleepTimer > 0 && (
           <Text style={{ color: '#ff9944', fontSize: 11, marginTop: 4, fontWeight: '600' }}>
             😴 Sleep in {Math.floor(sleepRemaining / 60)}:{String(sleepRemaining % 60).padStart(2, '0')}
@@ -2032,7 +2033,7 @@ export default function App() {
         {currentScreen === 'all_songs' && (
           <View style={styles.screenBody}>
             {/* ── User Welcome ── */}
-            <View style={{ paddingHorizontal: 16, marginBottom: 12, flexDirection: 'row', alignItems: 'center' }}>
+            <View style={{ paddingHorizontal: 16, marginBottom: 12, marginTop: -15, flexDirection: 'row', alignItems: 'center' }}>
               {isEditingUsername ? (
                 <TextInput
                   style={{ flex: 1, color: '#fff', fontSize: 22, fontWeight: '800', borderBottomWidth: 1, borderBottomColor: moodColor, paddingBottom: 4 }}
@@ -2505,7 +2506,7 @@ export default function App() {
                             setSearchQuery(g.label);
                           }
                         } catch {}
-                        finally { setIsSearching(false); }
+                        finally { setIsLoading(false); }
                       }}>
                       <Text style={{ fontSize: 22, marginBottom: 3 }}>{g.emoji}</Text>
                       <Text style={{ color: g.color, fontWeight: '700', fontSize: 11 }}>{g.label}</Text>
@@ -2994,7 +2995,7 @@ export default function App() {
       {/* ════════════════ MINI PLAYER ════════════════ */}
       {activeTrack && (
         <View
-          style={{ position: 'absolute', bottom: Platform.OS === 'ios' ? 115 : 95, left: 18, right: 18, zIndex: 999, elevation: 15, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.6, shadowRadius: 15 }}
+          style={{ position: 'absolute', bottom: Platform.OS === 'ios' ? 75 : 65, left: 18, right: 18, zIndex: 999 }}
           {...miniPlayerPan.panHandlers}
         >
           {/* Circular ring using react-native-svg for smooth rendering */}
@@ -3132,7 +3133,7 @@ export default function App() {
         );
         return (
           <View
-            style={[styles.bottomNav, { backgroundColor: isDark ? '#0d0d14' : '#f5f5f7', borderTopColor: theme.border, position: 'relative' }]}
+            style={[styles.bottomNav, { backgroundColor: isDark ? '#0d0d14' : '#f5f5f7' }]}
             onLayout={e => {
               const w = e.nativeEvent.layout.width;
               navBarWidthRef.current = w;
@@ -3887,7 +3888,7 @@ export default function App() {
 // ─── Styles — M3-Inspired Visual Refresh ─────────────────────────────────────
 const styles = StyleSheet.create({
   container:   { flex: 1, backgroundColor: '#0d0d14' },
-  header:      { backgroundColor: '#0d0d14', paddingTop: Platform.OS === 'ios' ? 35 : 0, paddingBottom: 4, alignItems: 'center', justifyContent: 'center' },
+  header:      { backgroundColor: '#0d0d14', paddingTop: Platform.OS === 'ios' ? 35 : 0, paddingBottom: 0, alignItems: 'center', justifyContent: 'center' },
   headerPill:  { paddingHorizontal: 26, paddingVertical: 9, borderRadius: 30, borderWidth: 1.5, alignItems: 'center' },
   headerTitle: { color: '#e6e1f5', fontSize: 15, fontWeight: 'bold', letterSpacing: 2.5 },
   autoplayBanner: { fontSize: 11, marginTop: 4, fontWeight: '600' },
@@ -3960,7 +3961,7 @@ const styles = StyleSheet.create({
   miniPlayerPlayBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
 
   // Bottom nav — M3 NavigationBar
-  bottomNav:   { flexDirection: 'row', borderTopWidth: 1, paddingBottom: Platform.OS === 'ios' ? 30 : 10, paddingTop: 4 },
+  bottomNav:   { flexDirection: 'row', borderTopWidth: 0, paddingBottom: Platform.OS === 'ios' ? 15 : 6, paddingTop: 6 },
   navButton:   { flex: 1, alignItems: 'center', paddingVertical: 10, zIndex: 1 },
   navText:     { fontSize: 10, fontWeight: '600', marginTop: 2 },
 
