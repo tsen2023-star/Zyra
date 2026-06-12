@@ -767,7 +767,7 @@ export default function App() {
   });
 
   // ─── RNTP queue-ended ─────────────────────────────────────────────────────────
-  useTrackPlayerEvents([Event.PlaybackQueueEnded], async () => { prefillQueue(); });
+  useTrackPlayerEvents([Event.PlaybackQueueEnded], async () => { if (playNextRef.current) playNextRef.current(); });
 
   // ─── BackHandler refs ─────────────────────────────────────────────────────────
   useEffect(() => { screenRef.current = currentScreen; }, [currentScreen]);
@@ -1313,19 +1313,11 @@ export default function App() {
   };
 
   // ─── [NEW] Toggle Listen Later ────────────────────────────────────────────────
-  // ─── Add to Next (inserts song at next position in TrackPlayer queue) ───────
+  // ─── Add to Next (inserts song at next position) ───────
   const addToNext = async (song: any) => {
     if (!song) return;
     try {
-      const queue = await TrackPlayer.getQueue();
-      const currentIdx = await TrackPlayer.getActiveTrackIndex() ?? 0;
-      const insertAt = Math.min(currentIdx + 1, queue.length);
-      await TrackPlayer.add({
-        id: song.id, url: song.url,
-        title: song.title || '', artist: song.artist || '',
-        artwork: song.image || '', duration: song.duration || 0,
-      }, insertAt);
-      trackMetaRef.current.set(String(song.id), song);
+      setAutoplayQueue(prev => [song, ...prev.filter(s => s.id !== song.id)]);
       showAlert('Added ▶', `"${song.title}" will play next`);
     } catch {
       showAlert('Error', 'Could not add to queue');
@@ -1635,14 +1627,14 @@ export default function App() {
     } catch {}
   };
 
-  // ─── Add single song to queue ─────────────────────────────────────────────────
+  // ─── Add single song to queue (adds to end of autoplayQueue) ──────────────────
   const addSingleToQueue = async (song: any) => {
     if (!song?.id) return;
-    if (trackMetaRef.current.get(String(song.id))) { showAlert('Already in Queue', 'This song is already in the up next queue.'); return; }
-    trackMetaRef.current.set(String(song.id), song);
     try {
-      const url = await resolveStreamUrl(song);
-      await TrackPlayer.add({ id: String(song.id), url, title: song.title || '', artist: song.artist || '', artwork: song.image || '' });
+      setAutoplayQueue(prev => {
+        if (prev.some(s => s.id === song.id)) return prev;
+        return [...prev, song];
+      });
       showAlert('Added to Queue', `"${song.title}" added to up next.`);
     } catch { showAlert('Error', 'Could not add to queue.'); }
   };
