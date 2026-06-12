@@ -730,7 +730,7 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        await TrackPlayer.setupPlayer({ minBuffer: 1, maxBuffer: 50, playBuffer: 0.5 });
+        await TrackPlayer.setupPlayer();
         await TrackPlayer.updateOptions({
           capabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext, Capability.SkipToPrevious, Capability.Stop, Capability.SeekTo],
           compactCapabilities: [Capability.SkipToPrevious, Capability.Play, Capability.SkipToNext],
@@ -1454,8 +1454,8 @@ export default function App() {
         artwork: track.image  || '',
       };
       
-      // Use load() instead of reset() + add() for instantaneous playback
-      await TrackPlayer.load(trackItem);
+      await TrackPlayer.reset();
+      await TrackPlayer.add(trackItem);
       trackMetaRef.current.clear();
       trackMetaRef.current.set(String(track.id), track);
       await TrackPlayer.play();
@@ -2155,7 +2155,45 @@ export default function App() {
                     </>
                   )}
 
+                  {/* Artists */}
+
+                  {(searchFilter === 'all' || searchFilter === 'artists') && songsList.length > 0 && (
+                    <>
+                      <Text style={[styles.echoSectionLabel, { color: moodColor }]}>Artists</Text>
+                      {Array.from(new Map(songsList.flatMap((s: any) =>
+                        (s.artist || '').split(',').map((a: string) => a.trim()).filter(Boolean).map((a: string) => [a, { name: a, image: s.image }])
+                      )).values()).slice(0, 5).map((artist: any, i: number) => (
+                        <TouchableOpacity key={i}
+                          style={[styles.searchResultRow, { backgroundColor: theme.card }]}
+                          onPress={() => fetchArtist(artist)}>
+                          <View style={{ width: 52, height: 52, borderRadius: 26, overflow: 'hidden', backgroundColor: moodColor + '33', marginRight: 14 }}>
+                            {artist.image
+                              ? <Image source={{ uri: artist.name === 'KK' ? 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cc/KK_MTV_India.jpg/800px-KK_MTV_India.jpg' : artist.image }} style={{ width: 52, height: 52, borderRadius: 26 }} />
+                              : <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><Text style={{ color: '#fff', fontSize: 22, fontWeight: 'bold' }}>{artist.name.charAt(0).toUpperCase()}</Text></View>}
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text numberOfLines={1} style={{ color: theme.text, fontSize: 15, fontWeight: '700' }}>{artist.name}</Text>
+                            <Text style={{ color: moodColor, fontSize: 12 }}>Artist</Text>
+                          </View>
+                          <Ionicons name="chevron-forward" size={18} color={theme.subtext} />
+                        </TouchableOpacity>
+                      ))}
+                    </>
+                  )}
+
+                  {/* All Songs list */}
+
+                  {(searchFilter === 'all' || searchFilter === 'songs') && songsList.length > 1 && (
+                    <>
+                      <Text style={[styles.echoSectionLabel, { color: moodColor }]}>Songs</Text>
+                      {songsList.slice(searchFilter === 'all' ? 1 : 0).map((song: any) =>
+                        renderTrackCard(song, activeTrack?.id === song.id, isTrackFavorite(song.id))
+                      )}
+                    </>
+                  )}
+
                   {/* ──── Movies ──── */}
+
                   {(searchFilter === 'all' || searchFilter === 'movies') && movieResults.length > 0 && (
                     <>
                       <Text style={[styles.echoSectionLabel, { color: moodColor }]}>Movies</Text>
@@ -2202,41 +2240,6 @@ export default function App() {
                           <Ionicons name="ellipsis-vertical" size={18} color={theme.subtext} />
                         </TouchableOpacity>
                       ))}
-                    </>
-                  )}
-
-                  {/* Artists */}
-                  {(searchFilter === 'all' || searchFilter === 'artists') && songsList.length > 0 && (
-                    <>
-                      <Text style={[styles.echoSectionLabel, { color: moodColor }]}>Artists</Text>
-                      {Array.from(new Map(songsList.flatMap((s: any) =>
-                        (s.artist || '').split(',').map((a: string) => a.trim()).filter(Boolean).map((a: string) => [a, { name: a, image: s.image }])
-                      )).values()).slice(0, 5).map((artist: any, i: number) => (
-                        <TouchableOpacity key={i}
-                          style={[styles.searchResultRow, { backgroundColor: theme.card }]}
-                          onPress={() => fetchArtist(artist)}>
-                          <View style={{ width: 52, height: 52, borderRadius: 26, overflow: 'hidden', backgroundColor: moodColor + '33', marginRight: 14 }}>
-                            {artist.image
-                              ? <Image source={{ uri: artist.name === 'KK' ? 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cc/KK_MTV_India.jpg/800px-KK_MTV_India.jpg' : artist.image }} style={{ width: 52, height: 52, borderRadius: 26 }} />
-                              : <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><Text style={{ color: '#fff', fontSize: 22, fontWeight: 'bold' }}>{artist.name.charAt(0).toUpperCase()}</Text></View>}
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text numberOfLines={1} style={{ color: theme.text, fontSize: 15, fontWeight: '700' }}>{artist.name}</Text>
-                            <Text style={{ color: moodColor, fontSize: 12 }}>Artist</Text>
-                          </View>
-                          <Ionicons name="chevron-forward" size={18} color={theme.subtext} />
-                        </TouchableOpacity>
-                      ))}
-                    </>
-                  )}
-
-                  {/* All Songs list */}
-                  {(searchFilter === 'all' || searchFilter === 'songs') && songsList.length > 1 && (
-                    <>
-                      <Text style={[styles.echoSectionLabel, { color: moodColor }]}>Songs</Text>
-                      {songsList.slice(searchFilter === 'all' ? 1 : 0).map((song: any) =>
-                        renderTrackCard(song, activeTrack?.id === song.id, isTrackFavorite(song.id))
-                      )}
                     </>
                   )}
 
@@ -2986,7 +2989,7 @@ export default function App() {
       {/* ════════════════ MINI PLAYER ════════════════ */}
       {activeTrack && (
         <View
-          style={{ position: 'absolute', bottom: Platform.OS === 'ios' ? 105 : 90, left: 18, right: 18, zIndex: 999 }}
+          style={{ position: 'absolute', bottom: Platform.OS === 'ios' ? 120 : 105, left: 18, right: 18, zIndex: 999 }}
           {...miniPlayerPan.panHandlers}
         >
           {/* Circular ring using react-native-svg for smooth rendering */}
@@ -3879,7 +3882,7 @@ export default function App() {
 // ─── Styles — M3-Inspired Visual Refresh ─────────────────────────────────────
 const styles = StyleSheet.create({
   container:   { flex: 1, backgroundColor: '#0d0d14' },
-  header:      { backgroundColor: '#0d0d14', paddingTop: 50, paddingBottom: 14, alignItems: 'center', justifyContent: 'center' },
+  header:      { backgroundColor: '#0d0d14', paddingTop: Platform.OS === 'ios' ? 45 : 10, paddingBottom: 4, alignItems: 'center', justifyContent: 'center' },
   headerPill:  { paddingHorizontal: 26, paddingVertical: 9, borderRadius: 30, borderWidth: 1.5, alignItems: 'center' },
   headerTitle: { color: '#e6e1f5', fontSize: 15, fontWeight: 'bold', letterSpacing: 2.5 },
   autoplayBanner: { fontSize: 11, marginTop: 4, fontWeight: '600' },
