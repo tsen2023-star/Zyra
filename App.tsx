@@ -162,6 +162,7 @@ export default function App() {
   const [isLoading,    setIsLoading]        = useState(false);
   const [isYoutubeFallback, setIsYoutubeFallback] = useState(false);
   const navBarWidthRef       = useRef<number>(0);
+  const progressBarWidthRef  = useRef<number>(0);
   const sessionHistoryRef    = useRef<any[]>([]);
 
   // ── RNTP hooks (must be at top level) ──
@@ -355,9 +356,10 @@ export default function App() {
 
   // ─── Nav pill — animate when screen changes (pixel-based, no stale closure) ──
   const navScreenToIdx = useCallback((screen: string) => {
-    if (screen === 'library' || screen === 'playlist_view' || screen === 'listen_later') return 1;
-    if (screen === 'downloads') return 2;
-    if (screen === 'settings')  return 3;
+    if (screen === 'search') return 1;
+    if (screen === 'library' || screen === 'playlist_view' || screen === 'listen_later') return 2;
+    if (screen === 'downloads') return 3;
+    if (screen === 'settings')  return 4;
     return 0;
   }, []);
 
@@ -366,7 +368,7 @@ export default function App() {
     const w = navBarWidthRef.current;
     if (w > 0) {
       Animated.spring(navPillAnim, {
-        toValue: idx * (w / 4),
+        toValue: idx * (w / 5),
         useNativeDriver: true,
         damping: 22, stiffness: 200, mass: 0.7,
       } as any).start();
@@ -2031,206 +2033,7 @@ export default function App() {
               )}
             </View>
 
-            {/* ── Search Bar ── */}
-            <View style={styles.searchBox}>
-              <Ionicons name="search" size={20} color="#666" style={{ marginRight: 10 }} />
-              <TextInput
-                placeholder="Search songs, artists, albums..."
-                placeholderTextColor="#666"
-                style={styles.input}
-                value={searchQuery}
-                onChangeText={(t) => { setSearchQuery(t); setSearchFilter('all'); }}
-                onFocus={() => setIsSearchFocused(true)}
-                onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
-              />
-              {isSearching
-                ? <ActivityIndicator size="small" color={moodColor} />
-                : searchQuery.length > 0
-                  ? <TouchableOpacity onPress={() => setSearchQuery('')}><Ionicons name="close-circle" size={18} color="#8e8e93" /></TouchableOpacity>
-                  : null}
-            </View>
-
-            {isSearchFocused || searchQuery.trim().length > 0 ? (
-              <View style={{ flex: 1 }}>
-                {/* ── Compact filter chips — RIGHT below search bar ── */}
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}
-                  style={{ marginBottom: 8, flexGrow: 0 }}
-                  contentContainerStyle={{ gap: 6, paddingRight: 8, alignItems: 'center' }}>
-                  {(['all','songs','albums','artists','movies'] as const).map(f => (
-                    <TouchableOpacity key={f}
-                      onPress={() => setSearchFilter(f)}
-                      style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: searchFilter === f ? moodColor : theme.card, borderWidth: 1, borderColor: searchFilter === f ? moodColor : theme.border }}>
-                      {searchFilter === f && <Ionicons name="checkmark" size={12} color="#050515" style={{ marginRight: 4 }} />}
-                      <Text style={{ color: searchFilter === f ? '#050515' : theme.text, fontWeight: '700', fontSize: 13, textTransform: 'capitalize' }}>{f}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-
-                {/* ── Echo Music Style: History + Suggestions + Results in one scroll ── */}
-                <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-
-                  {/* SECTION 1: Search History (matching) */}
-                  {isSearchFocused && searchHistory.filter(h => h.toLowerCase().includes(searchQuery.toLowerCase()) && h.toLowerCase() !== searchQuery.toLowerCase()).length > 0 && (
-                    <View style={{ backgroundColor: theme.card, borderRadius: 16, marginBottom: 10, overflow: 'hidden', borderWidth: 1, borderColor: theme.border }}>
-                      <Text style={{ color: moodColor, fontSize: 12, fontWeight: '800', letterSpacing: 1, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 6, textTransform: 'uppercase' }}>Search history</Text>
-                      {searchHistory
-                        .filter(h => h.toLowerCase().includes(searchQuery.toLowerCase()) && h.toLowerCase() !== searchQuery.toLowerCase())
-                        .slice(0, 3)
-                        .map((item, i) => (
-                          <TouchableOpacity key={i}
-                            style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1, borderTopColor: theme.border + '33' }}
-                            onPress={() => { setSearchQuery(item); setIsSearchFocused(false); }}>
-                            <Ionicons name="time-outline" size={16} color={theme.subtext} style={{ marginRight: 14 }} />
-                            <Text style={{ flex: 1, color: theme.text, fontSize: 14 }}>{item}</Text>
-                            <TouchableOpacity onPress={() => removeSearchHistory(item)} hitSlop={{ top:10,bottom:10,left:10,right:10 }}>
-                              <Ionicons name="close" size={14} color={theme.subtext} />
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={() => setSearchQuery(item)} hitSlop={{ top:10,bottom:10,left:10,right:10 }} style={{ marginLeft: 10 }}>
-                              <Ionicons name="arrow-up-outline" size={16} color={moodColor} style={{ transform: [{ rotate: '45deg' }] }} />
-                            </TouchableOpacity>
-                          </TouchableOpacity>
-                        ))}
-                    </View>
-                  )}
-
-                  {/* SECTION 2: Suggestions from live results (Echo Music style) */}
-                  {isSearchFocused && searchSuggestions.length > 0 && (
-                    <View style={{ backgroundColor: theme.card, borderRadius: 16, marginBottom: 10, overflow: 'hidden', borderWidth: 1, borderColor: theme.border }}>
-                      <Text style={{ color: moodColor, fontSize: 12, fontWeight: '800', letterSpacing: 1, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 6, textTransform: 'uppercase' }}>Suggestions</Text>
-                      {searchSuggestions.slice(0, 8).map((suggestion: string, i: number) => (
-                        <TouchableOpacity key={i}
-                          style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1, borderTopColor: theme.border + '33' }}
-                          onPress={() => { setSearchQuery(suggestion); setIsSearchFocused(false); }}>
-                          <Ionicons name="search" size={16} color={theme.subtext} style={{ marginRight: 14 }} />
-                          <Text style={{ flex: 1, color: theme.text, fontSize: 14 }}>{suggestion}</Text>
-                          <TouchableOpacity onPress={() => setSearchQuery(suggestion)} hitSlop={{ top:10,bottom:10,left:10,right:10 }}>
-                            <Ionicons name="arrow-up-outline" size={16} color={theme.subtext} style={{ transform: [{ rotate: '-45deg' }] }} />
-                          </TouchableOpacity>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-
-                  {/* SECTION 3: Top Results */}
-                  {(searchFilter === 'all' || searchFilter === 'songs') && songsList.length > 0 && (
-                    <>
-                      <Text style={[styles.echoSectionLabel, { color: moodColor }]}>Top Results</Text>
-                      {songsList.slice(0, 3).map((song: any, idx: number) => (
-                        <TouchableOpacity key={idx}
-                          style={[styles.topResultCard, { backgroundColor: theme.card, borderColor: moodColor + (idx === 0 ? '66' : '22') }]}
-                          onPress={() => handleTrackPress(song)}
-                          onLongPress={() => { setContextMenuSong(song); setContextMenuVisible(true); }}>
-                          {song.image
-                            ? <Image source={{ uri: song.image }} style={{ width: 52, height: 52, borderRadius: 10, marginRight: 12 }} />
-                            : <View style={{ width: 52, height: 52, borderRadius: 10, backgroundColor: moodColor + '22', justifyContent: 'center', alignItems: 'center', marginRight: 12 }}><Ionicons name="musical-note" size={22} color={moodColor} /></View>}
-                          <View style={{ flex: 1 }}>
-                            <Text numberOfLines={1} style={{ color: theme.text, fontSize: idx === 0 ? 15 : 14, fontWeight: '800' }}>{song.title}</Text>
-                            <Text numberOfLines={1} style={{ color: theme.subtext, fontSize: 12, fontStyle: 'italic' }}>{song.artist}</Text>
-                          </View>
-                          {idx === 0 && <View style={{ backgroundColor: moodColor, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}><Text style={{ color: '#050515', fontSize: 10, fontWeight: '800' }}>TOP</Text></View>}
-                        </TouchableOpacity>
-                      ))}
-                    </>
-                  )}
-
-                  {/* Artists */}
-
-                  {(searchFilter === 'all' || searchFilter === 'artists') && songsList.length > 0 && (
-                    <>
-                      <Text style={[styles.echoSectionLabel, { color: moodColor }]}>Artists</Text>
-                      {Array.from(new Map(songsList.flatMap((s: any) =>
-                        (s.artist || '').split(',').map((a: string) => a.trim()).filter(Boolean).map((a: string) => [a, { name: a, image: s.image }])
-                      )).values()).slice(0, 5).map((artist: any, i: number) => (
-                        <TouchableOpacity key={i}
-                          style={[styles.searchResultRow, { backgroundColor: theme.card }]}
-                          onPress={() => fetchArtist(artist)}>
-                          <View style={{ width: 52, height: 52, borderRadius: 26, overflow: 'hidden', backgroundColor: moodColor + '33', marginRight: 14 }}>
-                            {artist.image
-                              ? <Image source={{ uri: artist.name === 'KK' ? 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cc/KK_MTV_India.jpg/800px-KK_MTV_India.jpg' : artist.image }} style={{ width: 52, height: 52, borderRadius: 26 }} />
-                              : <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><Text style={{ color: '#fff', fontSize: 22, fontWeight: 'bold' }}>{artist.name.charAt(0).toUpperCase()}</Text></View>}
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text numberOfLines={1} style={{ color: theme.text, fontSize: 15, fontWeight: '700' }}>{artist.name}</Text>
-                            <Text style={{ color: moodColor, fontSize: 12 }}>Artist</Text>
-                          </View>
-                          <Ionicons name="chevron-forward" size={18} color={theme.subtext} />
-                        </TouchableOpacity>
-                      ))}
-                    </>
-                  )}
-
-                  {/* All Songs list */}
-
-                  {(searchFilter === 'all' || searchFilter === 'songs') && songsList.length > 1 && (
-                    <>
-                      <Text style={[styles.echoSectionLabel, { color: moodColor }]}>Songs</Text>
-                      {songsList.slice(searchFilter === 'all' ? 1 : 0).map((song: any) =>
-                        renderTrackCard(song, activeTrack?.id === song.id, isTrackFavorite(song.id))
-                      )}
-                    </>
-                  )}
-
-                  {/* ──── Movies ──── */}
-
-                  {(searchFilter === 'all' || searchFilter === 'movies') && movieResults.length > 0 && (
-                    <>
-                      <Text style={[styles.echoSectionLabel, { color: moodColor }]}>Movies</Text>
-                      {movieResults.slice(0, searchFilter === 'movies' ? movieResults.length : 5).map((movie: any, i: number) => (
-                        <TouchableOpacity key={i}
-                          style={[styles.searchResultRow, { backgroundColor: theme.card }]}
-                          onPress={() => openMovie(movie)}>
-                          <View style={{ width: 52, height: 52, borderRadius: 10, overflow: 'hidden', backgroundColor: theme.surface, marginRight: 14 }}>
-                            {movie.image
-                              ? <Image source={{ uri: movie.image }} style={{ width: 52, height: 52 }} />
-                              : <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><Ionicons name="film-outline" size={26} color={moodColor} /></View>}
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text numberOfLines={1} style={{ color: theme.text, fontSize: 15, fontWeight: '700' }}>{movie.name}</Text>
-                            <Text numberOfLines={1} style={{ color: theme.subtext, fontSize: 12, fontStyle: 'italic' }}>
-                              {movie.year ? `${movie.year} · ` : ''}{movie.artists || 'Soundtrack'}
-                            </Text>
-                          </View>
-                          <View style={{ alignItems: 'center', marginLeft: 8 }}>
-                            <Ionicons name="film" size={14} color={moodColor} />
-                            <Text style={{ color: moodColor, fontSize: 10, fontWeight: '700', marginTop: 2 }}>{movie.songCount || '?'}</Text>
-                          </View>
-                          <Ionicons name="chevron-forward" size={18} color={theme.subtext} style={{ marginLeft: 6 }} />
-                        </TouchableOpacity>
-                      ))}
-                    </>
-                  )}
-
-                  {/* Albums (only show if explicitly filtered to albums to avoid duplicating Movies) */}
-                  {searchFilter === 'albums' && albumResults.length > 0 && (
-                    <>
-                      <Text style={[styles.echoSectionLabel, { color: moodColor }]}>Albums</Text>
-                      {albumResults.map(album => (
-                        <TouchableOpacity key={album.id}
-                          style={[styles.searchResultRow, { backgroundColor: theme.card }]}
-                          onPress={() => { setIsSearchFocused(false); openAlbumView(album); }}>
-                          <View style={{ width: 52, height: 52, borderRadius: 10, overflow: 'hidden', backgroundColor: theme.surface, marginRight: 14 }}>
-                            {album.image ? <Image source={{ uri: album.image }} style={{ width: 52, height: 52 }} /> : <Ionicons name="albums-outline" size={26} color={moodColor} />}
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text numberOfLines={1} style={{ color: theme.text, fontSize: 15, fontWeight: '700' }}>{album.name}</Text>
-                            <Text style={{ color: theme.subtext, fontSize: 12, fontStyle: 'italic' }}>{album.artist || 'Unknown Artist'}</Text>
-                          </View>
-                          <Ionicons name="ellipsis-vertical" size={18} color={theme.subtext} />
-                        </TouchableOpacity>
-                      ))}
-                    </>
-                  )}
-
-                  {isSearching && (
-                    <View style={{ alignItems: 'center', padding: 20 }}>
-                      <ActivityIndicator color={moodColor} size="large" />
-                      <Text style={{ color: theme.subtext, marginTop: 10, fontSize: 13 }}>Searching...</Text>
-                    </View>
-                  )}
-                </ScrollView>
-              </View>
-            ) : (
-              /* ── HOME FEED ── */
+            {/* ── HOME FEED ── */}
               <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefreshHome} tintColor={moodColor} />}>
 
                 {/* Recently Played */}
@@ -2424,99 +2227,11 @@ export default function App() {
                   </View>
                 )}
 
-                {/* ── Trending Now ── */}
-                <Text style={[styles.echoSectionLabel, { marginBottom: 2 }]}>Trending Now 🔥</Text>
-                <Text style={{ color: theme.subtext, fontSize: 11, fontStyle: 'italic', marginBottom: 12 }}>MUSIC THAT'S HOT AND HAPPENING</Text>
-                {trendingSongs.length > 0 ? (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 28 }}>
-                    {trendingSongs.map((song, i) => (
-                      <TouchableOpacity key={i} style={styles.trendingCard} onPress={() => handleTrackPress(song)}>
-                        <View style={{ width: 130, height: 130, borderRadius: 16, overflow: 'hidden', backgroundColor: theme.surface, marginBottom: 8 }}>
-                          {song.image ? <Image source={{ uri: song.image }} style={{ width: 130, height: 130 }} /> : <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><Ionicons name="musical-note" size={32} color={moodColor} /></View>}
-                          <View style={[styles.trendingRank, { backgroundColor: moodColor }]}><Text style={{ color: '#000', fontSize: 11, fontWeight: 'bold' }}>#{i + 1}</Text></View>
-                        </View>
-                        <Text numberOfLines={1} style={{ color: theme.text, fontSize: 12, fontWeight: '700', width: 130 }}>{song.title}</Text>
-                        <Text numberOfLines={1} style={{ color: theme.subtext, fontSize: 11, fontStyle: 'italic', width: 130 }}>{song.artist}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                ) : (
-                  <View style={{ height: 80, justifyContent: 'center', alignItems: 'center', marginBottom: 28 }}>
-                    <ActivityIndicator size="small" color={moodColor} />
-                    <Text style={{ color: theme.subtext, fontSize: 12, marginTop: 8 }}>Loading trending songs...</Text>
-                  </View>
-                )}
-
-                {/* ── Bollywood & Regional — 3-column grid ── */}
-                <Text style={[styles.echoSectionLabel, { marginBottom: 2 }]}>Bollywood &amp; Regional 🎬</Text>
-                <Text style={{ color: theme.subtext, fontSize: 11, fontStyle: 'italic', marginBottom: 12 }}>HIT THE HOME TEAM'S DANCE FLOOR</Text>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 28 }}>
-                  {[
-                    { label: 'Bollywood', emoji: '🎬', query: 'bollywood hits 2024',   color: '#e01060' },
-                    { label: 'Punjabi',   emoji: '🎤', query: 'punjabi hits 2024',     color: '#f57c00' },
-                    { label: 'Haryanvi',  emoji: '🌿', query: 'haryanvi hits 2024',    color: '#2e7d32' },
-                    { label: 'Tamil',     emoji: '🌊', query: 'tamil hits 2024',       color: '#0277bd' },
-                    { label: 'Telugu',    emoji: '🌟', query: 'telugu hits 2024',      color: '#6a1b9a' },
-                    { label: 'Retro 90s', emoji: '💫', query: '90s hindi hits',        color: '#c62828' },
-                    { label: 'Devotional',emoji: '🙏', query: 'bhajan devotional',     color: '#ff8f00' },
-                    { label: 'Romantic',  emoji: '❤️', query: 'romantic hindi songs',  color: '#d41051' },
-                    { label: 'Party',     emoji: '🎉', query: 'party songs 2024',      color: '#ff1900' },
-                  ].map(g => (
-                    <TouchableOpacity key={g.query}
-                      style={{ backgroundColor: g.color + '22', borderWidth: 1.5, borderColor: g.color + '88', borderRadius: 14, paddingVertical: 10, paddingHorizontal: 4, alignItems: 'center', width: '31%' }}
-                      onPress={async () => {
-                        setIsSearching(true);
-                        try {
-                          const r = await fetch(`https://saavn.dev/api/search/songs?query=${encodeURIComponent(g.query)}&limit=50`);
-                          const j = await r.json();
-                          if (j.success && j.data?.results) {
-                            const mapped = j.data.results.map((s:any) => {
-                              const dl = s.downloadUrl||[]; const im = s.image||[];
-                              return { id:s.id, title:s.name||'', artist:s.artists?.primary?.map((a:any)=>a.name).join(', ')||'', image:im.find((i:any)=>i.quality==='500x500')?.url||im[im.length-1]?.url||'', url:dl.find((u:any)=>u.quality==='320kbps')?.url||dl[dl.length-1]?.url||'', duration:s.duration||0 };
-                            }).filter((s:any)=>s.url);
-                            setSongsList(mapped);
-                            setSearchQuery(g.label);
-                          }
-                        } catch {}
-                        finally { setIsLoading(false); }
-                      }}>
-                      <Text style={{ fontSize: 22, marginBottom: 3 }}>{g.emoji}</Text>
-                      <Text style={{ color: g.color, fontWeight: '700', fontSize: 11 }}>{g.label}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                {/* ── Top Artists — 3-column grid ── */}
-                {topArtists.length > 0 && (
-                  <>
-                    <Text style={[styles.echoSectionLabel, { marginBottom: 4 }]}>Top Artists</Text>
-                    <Text style={{ color: theme.subtext, fontSize: 11, fontStyle: 'italic', marginBottom: 12 }}>INDIA'S BIGGEST VOICES</Text>
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 28 }}>
-                      {topArtists.map((artist, i) => (
-                        <TouchableOpacity key={i}
-                          style={{ alignItems: 'center', width: '30%' }}
-                          onPress={() => fetchArtist(artist)}>
-                          <View style={{ width: 80, height: 80, borderRadius: 40, overflow: 'hidden', backgroundColor: theme.surface, borderWidth: 2.5, borderColor: moodColor + '55', marginBottom: 8 }}>
-                            {artist.image ? (<Image source={{ uri: artist.name === 'KK' ? 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cc/KK_MTV_India.jpg/800px-KK_MTV_India.jpg' : artist.image }} style={{ width: 80, height: 80, borderRadius: 40 }} />) : (
-                              <View style={{ width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center', backgroundColor: moodColor + '33' }}>
-                                <Text style={{ color: '#fff', fontSize: 28, fontWeight: 'bold' }}>{artist.name.charAt(0).toUpperCase()}</Text>
-                              </View>
-                            )}
-                          </View>
-                          <Text numberOfLines={1} style={{ color: theme.text, fontSize: 11, fontWeight: '700', textAlign: 'center' }}>{artist.name}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </>
-                )}
-
-                <View style={{ height: 20 }} />
+                                <View style={{ height: 20 }} />
               </ScrollView>
-            )}
           </View>
         )}
-
-        {/* ── ALBUM VIEW (Full Screen) ─────────────────────────────────────── */}
+{/* ── ALBUM VIEW (Full Screen) ─────────────────────────────────────── */}
         {currentScreen === 'album_view' && selectedAlbum && (
           <View style={[styles.screenBody, { padding: 0 }]}>
             {/* Immersive Header */}
@@ -2543,6 +2258,7 @@ export default function App() {
               <TouchableOpacity
                 onPress={() => {
                   if (selectedAlbum.songs?.length > 0) {
+                    setAutoplayQueue(selectedAlbum.songs.slice(1));
                     handleTrackPress(selectedAlbum.songs[0]);
                   }
                 }}
@@ -2554,7 +2270,7 @@ export default function App() {
 
             <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 150 }} showsVerticalScrollIndicator={false}>
               {selectedAlbum.songs?.map((song: any, index: number) => (
-                <TouchableOpacity key={index} style={[styles.searchResultRow, { backgroundColor: activeTrack?.id === song.id ? moodColor + '11' : theme.card }]} onPress={() => handleTrackPress(song)}>
+                <TouchableOpacity key={index} style={[styles.searchResultRow, { backgroundColor: activeTrack?.id === song.id ? moodColor + '11' : theme.card }]} onPress={() => { setAutoplayQueue(selectedAlbum.songs.slice(index + 1)); handleTrackPress(song); }}>
                   <View style={{ width: 45, height: 45, borderRadius: 8, overflow: 'hidden', marginRight: 12, backgroundColor: theme.surface }}>
                     {song.image ? <Image source={{ uri: song.image[1]?.url || song.image[0]?.url || song.image }} style={{ width: 45, height: 45 }} /> : <Ionicons name="musical-notes" size={24} color={moodColor} />}
                   </View>
@@ -2680,7 +2396,7 @@ export default function App() {
                 {pl.songs.length > 0 && (
                   <TouchableOpacity
                     style={{ backgroundColor: moodColor, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}
-                    onPress={() => { setSongsList(pl.songs); handleTrackPress(pl.songs[0]); }}>
+                    onPress={() => { setAutoplayQueue(pl.songs.slice(1)); setSongsList(pl.songs); handleTrackPress(pl.songs[0]); }}>
                     <Ionicons name="play" size={14} color="#000" />
                     <Text style={{ color: '#000', fontWeight: '800', fontSize: 13 }}>Play All</Text>
                   </TouchableOpacity>
@@ -2691,7 +2407,7 @@ export default function App() {
                   <TouchableOpacity
                     key={song.id + idx}
                     style={[styles.trackCard, activeTrack?.id === song.id && { borderLeftWidth: 3, borderLeftColor: moodColor }]}
-                    onPress={() => { setSongsList(pl.songs); handleTrackPress(song); }}
+                    onPress={() => { setAutoplayQueue(pl.songs.slice(idx + 1)); setSongsList(pl.songs); handleTrackPress(song); }}
                     onLongPress={() => {
                       showAlert('Remove Song', `Remove "${song.title}" from this playlist?`, [
                         { text: 'Cancel', style: 'cancel' },
@@ -3094,6 +2810,7 @@ export default function App() {
       {(() => {
         const tabs = [
           { screen: 'all_songs', icon: 'home-outline',     iconFilled: 'home',     label: 'Home'      },
+          { screen: 'search',    icon: 'search-outline',   iconFilled: 'search',   label: 'Search'    },
           { screen: 'library',   icon: 'library-outline',  iconFilled: 'library',  label: 'Library'   },
           { screen: 'downloads', icon: 'folder-outline',   iconFilled: 'folder',   label: 'Downloads' },
           { screen: 'settings',  icon: 'settings-outline', iconFilled: 'settings', label: 'Settings'  },
@@ -3110,7 +2827,7 @@ export default function App() {
               const w = e.nativeEvent.layout.width;
               navBarWidthRef.current = w;
               // Initial placement — jump to correct position without animation
-              navPillAnim.setValue(activeIdx * (w / 4));
+              navPillAnim.setValue(activeIdx * (w / 5));
             }}
           >
             {/* Sliding pill — uses pixel-based translateX (safe in RN) */}
@@ -3119,7 +2836,7 @@ export default function App() {
               style={{
                 position: 'absolute',
                 top: 8, left: 0,
-                width: '25%',
+                width: '20%',
                 transform: [{ translateX: navPillAnim }],
               }}
             >
@@ -3192,7 +2909,7 @@ export default function App() {
             {/* Play All button */}
             {movieSongs.length > 0 && (
               <TouchableOpacity
-                onPress={() => { handleTrackPress(movieSongs[0]); setSelectedMovie(null); setMovieSongs([]); }}
+                onPress={() => { setAutoplayQueue(movieSongs.slice(1)); handleTrackPress(movieSongs[0]); setSelectedMovie(null); setMovieSongs([]); }}
                 style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: moodColor, paddingHorizontal: 28, paddingVertical: 11, borderRadius: 30, marginTop: 16, gap: 8 }}>
                 <Ionicons name="play" size={18} color="#050515" />
                 <Text style={{ color: '#050515', fontWeight: '900', fontSize: 14 }}>Play All</Text>
@@ -3218,7 +2935,7 @@ export default function App() {
             ) : movieSongs.map((song: any, idx: number) => (
               <TouchableOpacity
                 key={song.id}
-                onPress={() => { handleTrackPress(song); setSelectedMovie(null); setMovieSongs([]); }}
+                onPress={() => { setAutoplayQueue(movieSongs.slice(idx + 1)); handleTrackPress(song); setSelectedMovie(null); setMovieSongs([]); }}
                 style={{
                   flexDirection: 'row', alignItems: 'center',
                   paddingHorizontal: 16, paddingVertical: 10,
