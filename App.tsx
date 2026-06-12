@@ -1714,11 +1714,36 @@ export default function App() {
       }
     } catch {}
 
-    // Fallback: Random song
+    // Fallback 1: Backend Random song
     try {
       const res  = await fetch(`${BACKEND_URL}/api/random`);
       const json = await res.json();
-      if (json.success && json.data?.song) await handleTrackPress(json.data.song);
+      if (json.success && json.data?.song) {
+        await handleTrackPress(json.data.song);
+        return;
+      }
+    } catch {}
+
+    // Fallback 2: Saavn API Suggestions (Local)
+    try {
+       const res = await fetch(`https://saavn.dev/api/songs/${activeTrack.id}/suggestions`);
+       const json = await res.json();
+       if (json.success && json.data && json.data.length > 0) {
+          const nextSong = json.data[0];
+          setAutoplayQueue(json.data.slice(1));
+          await handleTrackPress(nextSong);
+          return;
+       }
+    } catch {}
+    
+    // Fallback 3: Saavn API Artist Search (Local)
+    try {
+       const res = await fetch(`https://saavn.dev/api/search/songs?query=${encodeURIComponent(artist)}`);
+       const json = await res.json();
+       if (json.success && json.data?.results?.length > 0) {
+          const randIdx = Math.floor(Math.random() * Math.min(10, json.data.results.length));
+          await handleTrackPress(json.data.results[randIdx]);
+       }
     } catch {}
   };
   handleAutoNextRef.current = handleAutoNext;
@@ -2778,7 +2803,7 @@ export default function App() {
             </View>
 
             {/* Playback controls */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0, marginTop: 35 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0, marginTop: 55 }}>
               <TouchableOpacity onPress={playPrevious} hitSlop={{ top:14, bottom:14, left:8, right:8 }}>
                 <Ionicons name="play-skip-back" size={20} color="rgba(255,255,255,0.80)" />
               </TouchableOpacity>
