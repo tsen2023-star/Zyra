@@ -2118,7 +2118,8 @@ export default function App() {
                       {songsList.slice(0, 3).map((song: any, idx: number) => (
                         <TouchableOpacity key={idx}
                           style={[styles.topResultCard, { backgroundColor: theme.card, borderColor: moodColor + (idx === 0 ? '66' : '22') }]}
-                          onPress={() => handleTrackPress(song)}>
+                          onPress={() => handleTrackPress(song)}
+                          onLongPress={() => { setContextMenuSong(song); setContextMenuVisible(true); }}>
                           {song.image
                             ? <Image source={{ uri: song.image }} style={{ width: 52, height: 52, borderRadius: 10, marginRight: 12 }} />
                             : <View style={{ width: 52, height: 52, borderRadius: 10, backgroundColor: moodColor + '22', justifyContent: 'center', alignItems: 'center', marginRight: 12 }}><Ionicons name="musical-note" size={22} color={moodColor} /></View>}
