@@ -1478,12 +1478,15 @@ def stream_audio():
     title      = request.args.get('title',  '').strip()
     artist     = request.args.get('artist', '').strip()
     direct_url = request.args.get('url',    '').strip()   # ← fresh CDN URL from search results
+    return_json = request.args.get('json', '') == 'true'
     if not song_id:
         return 'Missing song id', 400
 
     # ⚡ INSTANT PATH: frontend already has a fresh CDN URL — just redirect, no API calls needed
     if direct_url and direct_url.startswith('https://') and 'saavncdn' in direct_url:
         print(f'Instant CDN redirect (pre-resolved): {song_id}')
+        if return_json:
+            return jsonify({'url': direct_url})
         return redirect(direct_url, code=302)
 
     audio_url = ''
@@ -1499,6 +1502,8 @@ def stream_audio():
         if instance and itag:
             proxy_url = f'{instance}/latest_version?id={yt_id}&itag={itag}&local=true'
             print(f'Redirecting to Invidious: {proxy_url}')
+            if return_json:
+                return jsonify({'url': proxy_url})
             return redirect(proxy_url, code=302)
 
         # ── Fallback: yt-dlp direct extraction ──
@@ -1539,6 +1544,8 @@ def stream_audio():
         audio_url = jiosaavn_get_audio_url(song_id)
         source    = 'jiosaavn'
         if audio_url:
+            if return_json:
+                return jsonify({'url': audio_url})
             return redirect(audio_url, code=302)
 
         # 4️⃣  Auto-fallback to YouTube if JioSaavn returned nothing
@@ -1549,6 +1556,11 @@ def stream_audio():
 
     if not audio_url:
         return 'Could not resolve audio URL from JioSaavn or YouTube', 404
+
+    if return_json:
+        if source == 'youtube':
+            return jsonify({'url': f"{request.host_url.rstrip('/')}/api/stream?id={urllib.parse.quote(song_id)}"})
+        return jsonify({'url': audio_url})
 
     # YouTube: must proxy (direct URL returns 403 from mobile clients)
     try:
