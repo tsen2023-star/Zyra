@@ -730,7 +730,12 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        await TrackPlayer.setupPlayer();
+        await TrackPlayer.setupPlayer({
+          minBuffer: 1,
+          maxBuffer: 15,
+          playBuffer: 0.1,
+          backBuffer: 0,
+        });
         await TrackPlayer.updateOptions({
           capabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext, Capability.SkipToPrevious, Capability.Stop, Capability.SeekTo],
           compactCapabilities: [Capability.SkipToPrevious, Capability.Play, Capability.SkipToNext],
@@ -1161,7 +1166,7 @@ export default function App() {
 
   // ─── Stream URL resolver (with audio quality) ────────────────────────────────
   const resolveStreamUrl = useCallback(async (song: any): Promise<string> => {
-    const dl = downloads.find((d: any) => d.id === song.id);
+    const dl = downloads.find((d: any) => String(d.id) === String(song.id));
     if (dl?.localUri) return dl.localUri;
     if (song.id?.startsWith('yt_')) {
       const te = encodeURIComponent(song.title  || '');
@@ -1482,10 +1487,10 @@ export default function App() {
 
       setIsLoading(false);
 
-      // Queue next songs in background
+      // Queue next songs in background (only for albums/playlists, not search results)
       const list = getActiveList();
       if (list.length > 0) {
-        const idx = list.findIndex((s: any) => s.id === track.id);
+        const idx = list.findIndex((s: any) => String(s.id) === String(track.id));
         const nextSongs = idx >= 0 ? list.slice(idx + 1, idx + 6) : [];
         if (nextSongs.length > 0) addSongsToQueue(nextSongs, 5);
       }
@@ -2989,7 +2994,7 @@ export default function App() {
       {/* ════════════════ MINI PLAYER ════════════════ */}
       {activeTrack && (
         <View
-          style={{ position: 'absolute', bottom: Platform.OS === 'ios' ? 120 : 105, left: 18, right: 18, zIndex: 999 }}
+          style={{ position: 'absolute', bottom: Platform.OS === 'ios' ? 115 : 95, left: 18, right: 18, zIndex: 999, elevation: 15, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.6, shadowRadius: 15 }}
           {...miniPlayerPan.panHandlers}
         >
           {/* Circular ring using react-native-svg for smooth rendering */}
@@ -3882,7 +3887,7 @@ export default function App() {
 // ─── Styles — M3-Inspired Visual Refresh ─────────────────────────────────────
 const styles = StyleSheet.create({
   container:   { flex: 1, backgroundColor: '#0d0d14' },
-  header:      { backgroundColor: '#0d0d14', paddingTop: Platform.OS === 'ios' ? 45 : 10, paddingBottom: 4, alignItems: 'center', justifyContent: 'center' },
+  header:      { backgroundColor: '#0d0d14', paddingTop: Platform.OS === 'ios' ? 35 : 0, paddingBottom: 4, alignItems: 'center', justifyContent: 'center' },
   headerPill:  { paddingHorizontal: 26, paddingVertical: 9, borderRadius: 30, borderWidth: 1.5, alignItems: 'center' },
   headerTitle: { color: '#e6e1f5', fontSize: 15, fontWeight: 'bold', letterSpacing: 2.5 },
   autoplayBanner: { fontSize: 11, marginTop: 4, fontWeight: '600' },
@@ -3955,7 +3960,7 @@ const styles = StyleSheet.create({
   miniPlayerPlayBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
 
   // Bottom nav — M3 NavigationBar
-  bottomNav:   { flexDirection: 'row', borderTopWidth: 1, paddingBottom: Platform.OS === 'ios' ? 40 : 25, paddingTop: 4 },
+  bottomNav:   { flexDirection: 'row', borderTopWidth: 1, paddingBottom: Platform.OS === 'ios' ? 30 : 10, paddingTop: 4 },
   navButton:   { flex: 1, alignItems: 'center', paddingVertical: 10, zIndex: 1 },
   navText:     { fontSize: 10, fontWeight: '600', marginTop: 2 },
 
