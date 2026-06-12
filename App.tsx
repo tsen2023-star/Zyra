@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity,
   Switch, StatusBar, ActivityIndicator, Modal, KeyboardAvoidingView,
   Platform, Animated, Easing, Image, BackHandler, Share, PanResponder,
-  AppState, RefreshControl
+  AppState, RefreshControl, FlatList
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import TrackPlayer, {
@@ -163,6 +163,7 @@ export default function App() {
   const [isYoutubeFallback, setIsYoutubeFallback] = useState(false);
   const navBarWidthRef       = useRef<number>(0);
   const progressBarWidthRef = useRef<number>(0);
+  const lyricsListRef = useRef<any>(null);
   const sessionHistoryRef    = useRef<any[]>([]);
 
   // ── RNTP hooks (must be at top level) ──
@@ -1394,21 +1395,26 @@ export default function App() {
       }
     } catch {}
 
-    // 2. Same artist
+    // 2. Try Saavn Suggestions (Best for Related)
+    try {
+      const r_sugg = await fetch(`https://saavn.dev/api/songs/${song.id}/suggestions`);
+      const j_sugg = await r_sugg.json();
+      if (j_sugg.success && j_sugg.data && j_sugg.data.length > 0) {
+        setRelatedSongs(j_sugg.data.map(mapSaavn));
+        setRelatedLoading(false);
+        return;
+      }
+    } catch {}
+
+    // 3. Same artist
     if (primaryArtist) {
       const r = await saavnSearch(primaryArtist + ' songs');
       if (r.length > 0) { setRelatedSongs(r); setRelatedLoading(false); return; }
     }
 
-    // 3. Title words
+    // 4. Title words
     const r2 = await saavnSearch(titleWords);
     if (r2.length > 0) { setRelatedSongs(r2); setRelatedLoading(false); return; }
-
-    // 4. Artist alone
-    if (primaryArtist) {
-      const r3 = await saavnSearch(primaryArtist);
-      if (r3.length > 0) { setRelatedSongs(r3); setRelatedLoading(false); return; }
-    }
 
     // 5. Fallback: any non-empty songs already loaded
     const fallback = songsList.filter((s: any) => s.id !== song.id && s.url).slice(0, 10);
@@ -1617,7 +1623,19 @@ export default function App() {
         setLyricsLoading(false); return;
       }
     } catch {}
-    setLyrics('Romanized lyrics not available for this song.');
+    // 4️⃣ Saavn API exact match (Local Fallback)
+    try {
+      const res = await fetch(`https://saavn.dev/api/songs/${song.id}/lyrics`);
+      const json = await res.json();
+      if (json.success && json.data?.lyrics) {
+        let lx = json.data.lyrics.replace(/<br>/g, '\n');
+        setLyrics(lx);
+        const parsed = parseLRC(lx);
+        if (parsed.length > 0) setParsedLyrics(parsed);
+        setLyricsLoading(false); return;
+      }
+    } catch {}
+    setLyrics('Lyrics not available for this song.');
     setLyricsLoading(false);
   };
 
@@ -3269,17 +3287,31 @@ export default function App() {
                   <Text style={{ color: '#666', marginTop: 8, fontSize: 13 }}>Fetching lyrics...</Text>
                 </View>
               ) : lyrics ? (
-                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+                <View style={{ flex: 1 }}>
                   {parsedLyrics.length > 0 ? (
-                    parsedLyrics.map((l, i) => (
-                      <TouchableOpacity key={i} onPress={() => TrackPlayer.seekTo(l.time)} style={{ paddingVertical: 6 }}>
-                        <Text style={{ color: i === currentLyricIndex ? moodColor : '#aaa', fontSize: i === currentLyricIndex ? 18 : 15, fontWeight: i === currentLyricIndex ? '700' : '500', textAlign: 'center' }}>{l.text}</Text>
-                      </TouchableOpacity>
-                    ))
+                    <FlatList
+                      ref={lyricsListRef}
+                      data={parsedLyrics}
+                      keyExtractor={(_: any, i: number) => i.toString()}
+                      showsVerticalScrollIndicator={false}
+                      contentContainerStyle={{ paddingVertical: '50%' }}
+                      initialNumToRender={50}
+                      onScrollToIndexFailed={(info: any) => {
+                         const wait = new Promise(resolve => setTimeout(resolve, 500));
+                         wait.then(() => lyricsListRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0.5 }));
+                      }}
+                      renderItem={({ item: l, index: i }: { item: any, index: number }) => (
+                        <TouchableOpacity onPress={() => TrackPlayer.seekTo(l.time)} style={{ paddingVertical: 10, paddingHorizontal: 20 }}>
+                          <Text style={{ color: i === currentLyricIndex ? moodColor : 'rgba(255,255,255,0.4)', fontSize: i === currentLyricIndex ? 22 : 16, fontWeight: i === currentLyricIndex ? '800' : '600', textAlign: 'center', lineHeight: i === currentLyricIndex ? 30 : 24, opacity: i === currentLyricIndex ? 1 : 0.6 }}>{l.text}</Text>
+                        </TouchableOpacity>
+                      )}
+                    />
                   ) : (
-                    <Text style={{ color: '#ccc', fontSize: 15, lineHeight: 24, textAlign: 'center' }}>{lyrics}</Text>
+                    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40, paddingTop: 20, paddingHorizontal: 20 }}>
+                      <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 16, lineHeight: 28, textAlign: 'center', fontWeight: '500' }}>{lyrics}</Text>
+                    </ScrollView>
                   )}
-                </ScrollView>
+                </View>
               ) : (
                 <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
                   <Ionicons name="document-text-outline" size={40} color="#333" />
