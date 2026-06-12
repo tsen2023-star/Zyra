@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Zyra Music",
+    "name": "Zyra",
     "slug": "zyra-music",
     "version": "1.0.7",
     "orientation": "portrait",
@@ -28,10 +28,10 @@
     "plugins": [
       "./rntp.plugin.js"
     ],
-    "owner": "babbllu2006",
+    "owner": "zyra2006",
     "extra": {
       "eas": {
-        "projectId": "e457d490-b3ad-4b14-be84-6711dddc49b3"
+        "projectId": "6ba158af-2a44-4271-8cb6-baf6c0f5ca08"
       }
     }
   }

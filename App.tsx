@@ -223,6 +223,7 @@ export default function App() {
   const [isSearching,    setIsSearching]    = useState(false);
   const [searchHistory,  setSearchHistory]  = useState<string[]>([]);
   const [isSearchFocused,setIsSearchFocused]= useState(false);
+  const [isEditingUsername, setIsEditingUsername] = useState(false);
   const [showStatsModal, setShowStatsModal] = useState(false);
   const [statsData,      setStatsData]      = useState<any>(null);
 
@@ -698,7 +699,7 @@ export default function App() {
         { key: 'punjabi', title: 'Punjabi Hits', subtitle: 'Bhangra beats' },
         { key: 'pop', title: 'Pop Sensations', subtitle: 'Top chart bangers' }
       ];
-      const results = [];
+      const results: any[] = [];
       for (const kw of keywords) {
         try {
           const r = await fetch(`${BACKEND_URL}/api/playlists/search?query=${kw.key}&limit=20`);
@@ -729,7 +730,7 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        await TrackPlayer.setupPlayer({ minBuffer: 5, maxBuffer: 50, playBuffer: 2, waitForBuffer: true });
+        await TrackPlayer.setupPlayer({ minBuffer: 1, maxBuffer: 50, playBuffer: 0.5 });
         await TrackPlayer.updateOptions({
           capabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext, Capability.SkipToPrevious, Capability.Stop, Capability.SeekTo],
           compactCapabilities: [Capability.SkipToPrevious, Capability.Play, Capability.SkipToNext],
@@ -1005,7 +1006,11 @@ export default function App() {
       if (!downloadRes.uri) throw new Error('Download failed');
       const entry = { ...song, localUri: downloadRes.uri };
       const json  = await apiCall('/api/user/downloads', 'POST', entry);
-      if (json.success) { setDownloads(json.data.downloads); showAlert('Downloaded', 'Song saved for offline listening!'); }
+      if (json.success) {
+        setDownloads(json.data.downloads);
+        AsyncStorage.setItem('cachedDownloads', JSON.stringify(json.data.downloads));
+        showAlert('Downloaded', 'Song saved for offline listening!');
+      }
     } catch (e) { console.error('Download error', e); showAlert('Error', 'Download failed. Please try again.'); }
   };
 
@@ -1016,9 +1021,24 @@ export default function App() {
         try {
           if (song.localUri) { try { await FileSystem.deleteAsync(song.localUri, { idempotent: true }); } catch {} }
           const json = await apiCall(`/api/user/downloads/${song.id}`, 'DELETE');
-          if (json.success) setDownloads(json.data.downloads);
-          else setDownloads(prev => prev.filter(d => d.id !== song.id));
-        } catch (e) { console.error('Delete download error', e); setDownloads(prev => prev.filter(d => d.id !== song.id)); }
+          if (json.success) {
+            setDownloads(json.data.downloads);
+            AsyncStorage.setItem('cachedDownloads', JSON.stringify(json.data.downloads));
+          } else {
+            setDownloads(prev => {
+              const nd = prev.filter(d => d.id !== song.id);
+              AsyncStorage.setItem('cachedDownloads', JSON.stringify(nd));
+              return nd;
+            });
+          }
+        } catch (e) {
+          console.error('Delete download error', e);
+          setDownloads(prev => {
+            const nd = prev.filter(d => d.id !== song.id);
+            AsyncStorage.setItem('cachedDownloads', JSON.stringify(nd));
+            return nd;
+          });
+        }
       }},
     ]);
   };
@@ -1028,17 +1048,20 @@ export default function App() {
   const fetchMovieResults = async (query: string) => {
     try {
       const ctrl1 = new AbortController(); const t1 = setTimeout(() => ctrl1.abort(), 8000);
-      const r = await fetch(`https://saavn.dev/api/search/albums?query=${encodeURIComponent(query)}&limit=12`, { signal: ctrl1.signal });
+      const r = await fetch(`${BACKEND_URL}/api/search?query=${encodeURIComponent(query)}`, { signal: ctrl1.signal });
       clearTimeout(t1);
       const j = await r.json();
-      if (j.success && j.data?.results?.length > 0) {
-        const movies = j.data.results.map((a: any) => {
-          const imgs: any[] = a.image || [];
-          const image = imgs.find((i: any) => i.quality === '500x500')?.url || imgs[imgs.length - 1]?.url || '';
-          const artists = a.artists?.map((ar: any) => ar.name).join(', ') || '';
-          return { id: a.id, name: a.name || '', description: a.description || '', image, year: a.year || '', songCount: a.songCount || 0, artists };
+      if (j.success && j.data?.albums?.length > 0) {
+        const movies = j.data.albums.map((a: any) => {
+          return { id: a.id, name: a.name || '', description: a.artist || '', image: a.image, year: '', songCount: 0, artists: a.artist || '' };
         });
         setMovieResults(movies);
+        
+        // Auto-expand if the movie name exactly matches the search query
+        const exactMatch = movies.find((m: any) => m.name.toLowerCase() === query.toLowerCase().trim());
+        if (exactMatch) {
+          openMovie(exactMatch);
+        }
       } else { setMovieResults([]); }
     } catch { setMovieResults([]); }
   };
@@ -1050,19 +1073,11 @@ export default function App() {
     setMovieSongs([]);
     try {
       const ctrl2 = new AbortController(); const t2 = setTimeout(() => ctrl2.abort(), 10000);
-      const r = await fetch(`https://saavn.dev/api/albums?id=${movie.id}`, { signal: ctrl2.signal });
+      const r = await fetch(`${BACKEND_URL}/api/albums/${movie.id}`, { signal: ctrl2.signal });
       clearTimeout(t2);
       const j = await r.json();
       if (j.success && j.data?.songs?.length > 0) {
-        const songs = j.data.songs.map((s: any) => {
-          const dlUrls: any[] = s.downloadUrl || [];
-          const imgs: any[]   = s.image || [];
-          const url   = dlUrls.find((u: any) => u.quality === '320kbps')?.url || dlUrls[dlUrls.length - 1]?.url || '';
-          const image = imgs.find((i: any) => i.quality === '500x500')?.url || imgs[imgs.length - 1]?.url || '';
-          const artist = s.artists?.primary?.map((a: any) => a.name).join(', ') || '';
-          return { id: s.id, title: s.name || '', artist, image, url, duration: s.duration || 0 };
-        });
-        setMovieSongs(songs);
+        setMovieSongs(j.data.songs);
       }
     } catch {}
     finally { setIsMovieSongsLoading(false); }
@@ -1105,7 +1120,13 @@ export default function App() {
     try {
       const resp = await fetch(`${BACKEND_URL}/api/search?query=${encodeURIComponent(query)}`);
       const json = await resp.json();
-      if (json.success) { setSongsList(json.data.results || []); setAlbumResults(json.data.albums || []); fetchMovieResults(query); }
+      if (json.success) { 
+        setSongsList(json.data.songs || json.data.results || []); 
+        setAlbumResults(json.data.albums || []); 
+        // Populate movieResults with the same albums to prevent empty sections if the user filters by 'movies', but avoid duplicate network calls.
+        const movies = (json.data.albums || []).map((a: any) => ({ id: a.id, name: a.name || '', description: a.artist || '', image: a.image, year: '', songCount: 0, artists: a.artist || '' }));
+        setMovieResults(movies);
+      }
       else { setSongsList([]); setAlbumResults([]); setMovieResults([]); }
     } catch { setSongsList([]); setAlbumResults([]); setMovieResults([]); }
     finally { setIsSearching(false); }
@@ -1425,16 +1446,18 @@ export default function App() {
     try {
       const streamUrl = await resolveStreamUrl(track);
 
-      await TrackPlayer.reset();
-      trackMetaRef.current.clear();
-      trackMetaRef.current.set(String(track.id), track);
-      await TrackPlayer.add({
+      const trackItem = {
         id:      String(track.id),
         url:     streamUrl,
         title:   track.title  || '',
         artist:  track.artist || '',
         artwork: track.image  || '',
-      });
+      };
+      
+      // Use load() instead of reset() + add() for instantaneous playback
+      await TrackPlayer.load(trackItem);
+      trackMetaRef.current.clear();
+      trackMetaRef.current.set(String(track.id), track);
       await TrackPlayer.play();
 
       // [NEW] Restore playback speed
@@ -1609,7 +1632,7 @@ export default function App() {
   // ─── Share ───────────────────────────────────────────────────────────────────
   const shareSong = async (song: any) => {
     try {
-      await Share.share({ title: song.title, message: `🎵 Listening to "${song.title}" by ${song.artist} on Zyra Music!` });
+      await Share.share({ title: song.title, message: `🎵 Listening to "${song.title}" by ${song.artist} on Zyra!` });
     } catch {}
   };
 
@@ -2003,6 +2026,34 @@ export default function App() {
         {/* ── HOME ─────────────────────────────────────────────────────────── */}
         {currentScreen === 'all_songs' && (
           <View style={styles.screenBody}>
+            {/* ── User Welcome ── */}
+            <View style={{ paddingHorizontal: 16, marginBottom: 12, flexDirection: 'row', alignItems: 'center' }}>
+              {isEditingUsername ? (
+                <TextInput
+                  style={{ flex: 1, color: '#fff', fontSize: 22, fontWeight: '800', borderBottomWidth: 1, borderBottomColor: moodColor, paddingBottom: 4 }}
+                  value={username}
+                  onChangeText={setUsername}
+                  placeholder="Enter your name"
+                  placeholderTextColor="#666"
+                  autoFocus
+                  onSubmitEditing={() => { setIsEditingUsername(false); AsyncStorage.setItem('username', username); }}
+                  onBlur={() => { setIsEditingUsername(false); AsyncStorage.setItem('username', username); }}
+                />
+              ) : (
+                <TouchableOpacity onPress={() => setIsEditingUsername(true)} style={{ flex: 1 }}>
+                  <Text style={{ color: '#fff', fontSize: 22, fontWeight: '800' }}>
+                    {(() => {
+                      const h = new Date().getHours();
+                      if (h < 12) return 'Good Morning, ';
+                      if (h < 17) return 'Good Afternoon, ';
+                      return 'Good Evening, ';
+                    })()}
+                    <Text style={{ color: moodColor }}>{username || 'Zyra'}</Text>
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
             {/* ── Search Bar ── */}
             <View style={styles.searchBox}>
               <Ionicons name="search" size={20} color="#666" style={{ marginRight: 10 }} />
@@ -2104,8 +2155,37 @@ export default function App() {
                     </>
                   )}
 
-                  {/* Albums */}
-                  {(searchFilter === 'all' || searchFilter === 'albums') && albumResults.length > 0 && (
+                  {/* ──── Movies ──── */}
+                  {(searchFilter === 'all' || searchFilter === 'movies') && movieResults.length > 0 && (
+                    <>
+                      <Text style={[styles.echoSectionLabel, { color: moodColor }]}>Movies</Text>
+                      {movieResults.slice(0, searchFilter === 'movies' ? movieResults.length : 5).map((movie: any, i: number) => (
+                        <TouchableOpacity key={i}
+                          style={[styles.searchResultRow, { backgroundColor: theme.card }]}
+                          onPress={() => openMovie(movie)}>
+                          <View style={{ width: 52, height: 52, borderRadius: 10, overflow: 'hidden', backgroundColor: theme.surface, marginRight: 14 }}>
+                            {movie.image
+                              ? <Image source={{ uri: movie.image }} style={{ width: 52, height: 52 }} />
+                              : <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><Ionicons name="film-outline" size={26} color={moodColor} /></View>}
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text numberOfLines={1} style={{ color: theme.text, fontSize: 15, fontWeight: '700' }}>{movie.name}</Text>
+                            <Text numberOfLines={1} style={{ color: theme.subtext, fontSize: 12, fontStyle: 'italic' }}>
+                              {movie.year ? `${movie.year} · ` : ''}{movie.artists || 'Soundtrack'}
+                            </Text>
+                          </View>
+                          <View style={{ alignItems: 'center', marginLeft: 8 }}>
+                            <Ionicons name="film" size={14} color={moodColor} />
+                            <Text style={{ color: moodColor, fontSize: 10, fontWeight: '700', marginTop: 2 }}>{movie.songCount || '?'}</Text>
+                          </View>
+                          <Ionicons name="chevron-forward" size={18} color={theme.subtext} style={{ marginLeft: 6 }} />
+                        </TouchableOpacity>
+                      ))}
+                    </>
+                  )}
+
+                  {/* Albums (only show if explicitly filtered to albums to avoid duplicating Movies) */}
+                  {searchFilter === 'albums' && albumResults.length > 0 && (
                     <>
                       <Text style={[styles.echoSectionLabel, { color: moodColor }]}>Albums</Text>
                       {albumResults.map(album => (
@@ -2145,35 +2225,6 @@ export default function App() {
                             <Text style={{ color: moodColor, fontSize: 12 }}>Artist</Text>
                           </View>
                           <Ionicons name="chevron-forward" size={18} color={theme.subtext} />
-                        </TouchableOpacity>
-                      ))}
-                    </>
-                  )}
-
-                  {/* ──── Movies ──── */}
-                  {(searchFilter === 'all' || searchFilter === 'movies') && movieResults.length > 0 && (
-                    <>
-                      <Text style={[styles.echoSectionLabel, { color: moodColor }]}>Movies</Text>
-                      {movieResults.slice(0, searchFilter === 'movies' ? movieResults.length : 5).map((movie: any, i: number) => (
-                        <TouchableOpacity key={i}
-                          style={[styles.searchResultRow, { backgroundColor: theme.card }]}
-                          onPress={() => openMovie(movie)}>
-                          <View style={{ width: 52, height: 52, borderRadius: 10, overflow: 'hidden', backgroundColor: theme.surface, marginRight: 14 }}>
-                            {movie.image
-                              ? <Image source={{ uri: movie.image }} style={{ width: 52, height: 52 }} />
-                              : <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><Ionicons name="film-outline" size={26} color={moodColor} /></View>}
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text numberOfLines={1} style={{ color: theme.text, fontSize: 15, fontWeight: '700' }}>{movie.name}</Text>
-                            <Text numberOfLines={1} style={{ color: theme.subtext, fontSize: 12, fontStyle: 'italic' }}>
-                              {movie.year ? `${movie.year} · ` : ''}{movie.artists || 'Soundtrack'}
-                            </Text>
-                          </View>
-                          <View style={{ alignItems: 'center', marginLeft: 8 }}>
-                            <Ionicons name="film" size={14} color={moodColor} />
-                            <Text style={{ color: moodColor, fontSize: 10, fontWeight: '700', marginTop: 2 }}>{movie.songCount || '?'}</Text>
-                          </View>
-                          <Ionicons name="chevron-forward" size={18} color={theme.subtext} style={{ marginLeft: 6 }} />
                         </TouchableOpacity>
                       ))}
                     </>
@@ -2307,11 +2358,11 @@ export default function App() {
                         try {
                           // Try to fetch an actual playlist for this mood
                           const q = encodeURIComponent(g.label + ' hindi bollywood');
-                          const r = await fetch(`https://saavn.dev/api/search/playlists?query=${q}&limit=1`);
+                          const r = await fetch(`${BACKEND_URL}/api/playlists/search?query=${q}&limit=1`);
                           const j = await r.json();
                           if (j.success && j.data?.results?.length > 0) {
                             const pId = j.data.results[0].id;
-                            const r2 = await fetch(`https://saavn.dev/api/playlists?id=${pId}&limit=50`);
+                            const r2 = await fetch(`${BACKEND_URL}/api/playlists/${pId}`);
                             const pdata = await r2.json();
                             const songsRaw = pdata.data?.songs || [];
                             if (songsRaw.length > 0) {
@@ -2329,7 +2380,7 @@ export default function App() {
                         } catch {}
                         // Fallback to simple search if playlist fails
                         try {
-                          const r = await fetch(`https://saavn.dev/api/search/songs?query=${encodeURIComponent(g.label + ' hits')}&limit=25`);
+                          const r = await fetch(`${BACKEND_URL}/api/search?query=${encodeURIComponent(g.label + ' hits')}`);
                           const j = await r.json();
                           if (j.success && j.data?.results) {
                             const mapped = j.data.results.map((s: any) => {
@@ -2935,7 +2986,7 @@ export default function App() {
       {/* ════════════════ MINI PLAYER ════════════════ */}
       {activeTrack && (
         <View
-          style={{ marginHorizontal: 10, marginBottom: 8 }}
+          style={{ position: 'absolute', bottom: Platform.OS === 'ios' ? 105 : 90, left: 18, right: 18, zIndex: 999 }}
           {...miniPlayerPan.panHandlers}
         >
           {/* Circular ring using react-native-svg for smooth rendering */}
@@ -3633,11 +3684,11 @@ export default function App() {
                     try {
                       // Try to fetch an actual playlist for this mood
                       const q = encodeURIComponent(m.label + ' hindi bollywood');
-                      const r = await fetch(`https://saavn.dev/api/search/playlists?query=${q}&limit=1`);
+                      const r = await fetch(`${BACKEND_URL}/api/playlists/search?query=${q}&limit=1`);
                       const j = await r.json();
                       if (j.success && j.data?.results?.length > 0) {
                         const pId = j.data.results[0].id;
-                        const r2 = await fetch(`https://saavn.dev/api/playlists?id=${pId}&limit=50`);
+                        const r2 = await fetch(`${BACKEND_URL}/api/playlists/${pId}`);
                         const pdata = await r2.json();
                         const songsRaw = pdata.data?.songs || [];
                         if (songsRaw.length > 0) {
@@ -3655,7 +3706,7 @@ export default function App() {
                     } catch {}
                     // Fallback to simple search if playlist fails
                     try {
-                      const r = await fetch(`https://saavn.dev/api/search/songs?query=${encodeURIComponent(m.label + ' hits')}&limit=25`);
+                      const r = await fetch(`${BACKEND_URL}/api/search?query=${encodeURIComponent(m.label + ' hits')}`);
                       const j = await r.json();
                       if (j.success && j.data?.results) {
                         const mapped = j.data.results.map((s: any) => {
@@ -3693,11 +3744,11 @@ export default function App() {
                     setSearchQuery(genre + ' Playlist');
                     try {
                       const q = encodeURIComponent(genre + ' songs hindi bollywood');
-                      const r = await fetch(`https://saavn.dev/api/search/playlists?query=${q}&limit=1`);
+                      const r = await fetch(`${BACKEND_URL}/api/playlists/search?query=${q}&limit=1`);
                       const j = await r.json();
                       if (j.success && j.data?.results?.length > 0) {
                         const pId = j.data.results[0].id;
-                        const r2 = await fetch(`https://saavn.dev/api/playlists?id=${pId}&limit=50`);
+                        const r2 = await fetch(`${BACKEND_URL}/api/playlists/${pId}`);
                         const pdata = await r2.json();
                         const songsRaw = pdata.data?.songs || [];
                         if (songsRaw.length > 0) {
@@ -3714,7 +3765,7 @@ export default function App() {
                       }
                     } catch {}
                     try {
-                      const r = await fetch(`https://saavn.dev/api/search/songs?query=${encodeURIComponent(genre + ' songs')}&limit=25`);
+                      const r = await fetch(`${BACKEND_URL}/api/search?query=${encodeURIComponent(genre + ' songs')}`);
                       const j = await r.json();
                       if (j.success && j.data?.results) {
                         const mapped = j.data.results.map((s: any) => {
@@ -3828,7 +3879,7 @@ export default function App() {
 // ─── Styles — M3-Inspired Visual Refresh ─────────────────────────────────────
 const styles = StyleSheet.create({
   container:   { flex: 1, backgroundColor: '#0d0d14' },
-  header:      { backgroundColor: '#0d0d14', paddingTop: 50, paddingBottom: 14, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
+  header:      { backgroundColor: '#0d0d14', paddingTop: 50, paddingBottom: 14, alignItems: 'center', justifyContent: 'center' },
   headerPill:  { paddingHorizontal: 26, paddingVertical: 9, borderRadius: 30, borderWidth: 1.5, alignItems: 'center' },
   headerTitle: { color: '#e6e1f5', fontSize: 15, fontWeight: 'bold', letterSpacing: 2.5 },
   autoplayBanner: { fontSize: 11, marginTop: 4, fontWeight: '600' },
@@ -3851,7 +3902,7 @@ const styles = StyleSheet.create({
   eyeBtn:          { position: 'absolute', right: 15, height: 55, justifyContent: 'center' },
 
   // Search
-  searchBox:   { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e1e2a', borderRadius: 16, paddingHorizontal: 16, marginBottom: 14, marginTop: -42, height: 50, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
+  searchBox:   { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e1e2a', borderRadius: 16, paddingHorizontal: 16, marginBottom: 14, height: 50, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
   input:       { flex: 1, color: '#e6e1f5', fontSize: 15 },
 
   // History
