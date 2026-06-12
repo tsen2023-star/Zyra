@@ -22,6 +22,10 @@ from recommender import (
 app = Flask(__name__)
 CORS(app)
 
+@app.route('/assets/kk_profile.png')
+def serve_kk_profile():
+    return send_file('kk_profile.png', mimetype='image/png')
+
 # ─── Config ───────────────────────────────────────────────────────────────────
 
 DATABASE_URL    = os.environ.get('DATABASE_URL', '')
@@ -1364,13 +1368,15 @@ TOP_BOLLYWOOD_ARTISTS = [
     {'name': 'Arijit Singh',      'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0b/Arijit_Singh_at_the_IIFA_Awards_%282019%29.jpg/440px-Arijit_Singh_at_the_IIFA_Awards_%282019%29.jpg'},
     {'name': 'Atif Aslam',        'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c9/Atif_Aslam_in_2020.jpg/440px-Atif_Aslam_in_2020.jpg'},
     {'name': 'AR Rahman',         'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/A_R_Rahman_in_2018.jpg/440px-A_R_Rahman_in_2018.jpg'},
-    {'name': 'Sonu Nigam',        'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/90/Sonu_Nigam_-_Dhaka%2C_2012.jpg/440px-Sonu_Nigam_-_Dhaka%2C_2012.jpg'},
+    {'name': 'Sonu Nigam',        'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/Sonu_Nigam_in_2020.jpg/440px-Sonu_Nigam_in_2020.jpg'},
     {'name': 'Shreya Ghoshal',    'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/Shreya_Ghoshal_in_2018_%28cropped%29.jpg/440px-Shreya_Ghoshal_in_2018_%28cropped%29.jpg'},
     {'name': 'Kumar Sanu',        'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f5/Kumar_Sanu.jpg/440px-Kumar_Sanu.jpg'},
     {'name': 'Jubin Nautiyal',    'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Jubin_Nautiyal_at_Filmfare_2020.jpg/440px-Jubin_Nautiyal_at_Filmfare_2020.jpg'},
     {'name': 'Neha Kakkar',       'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f7/Neha_Kakkar_2019.jpg/440px-Neha_Kakkar_2019.jpg'},
     {'name': 'Udit Narayan',      'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c2/Udit_narayan.jpg/440px-Udit_narayan.jpg'},
     {'name': 'Lata Mangeshkar',   'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/Lata_Mangeshkar_in_2019.jpg/440px-Lata_Mangeshkar_in_2019.jpg'},
+    {'name': 'K.K.',              'image': 'https://zyra-music-backend.onrender.com/assets/kk_profile.png'},
+    {'name': 'KK',                'image': 'https://zyra-music-backend.onrender.com/assets/kk_profile.png'},
     {'name': 'Kishore Kumar',     'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8b/Kishore_Kumar_1985.jpg/440px-Kishore_Kumar_1985.jpg'},
     {'name': 'Asha Bhosle',       'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/Asha_Bhosle_at_the_launch_of_her_first_acting_venture_Mai.jpg/440px-Asha_Bhosle_at_the_launch_of_her_first_acting_venture_Mai.jpg'},
     {'name': 'Badshah',           'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Badshah_at_Global_Citizen_Festival_2016.jpg/440px-Badshah_at_Global_Citizen_Festival_2016.jpg'},
@@ -1381,7 +1387,7 @@ TOP_BOLLYWOOD_ARTISTS = [
     {'name': 'Sunidhi Chauhan',   'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Sunidhi_Chauhan.jpg/440px-Sunidhi_Chauhan.jpg'},
     {'name': 'Darshan Raval',     'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a0/Darshan_Raval_2019.jpg/440px-Darshan_Raval_2019.jpg'},
     {'name': 'Yo Yo Honey Singh', 'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a1/Honey_Singh_at_BIG_Star_Entertainment_Awards.jpg/440px-Honey_Singh_at_BIG_Star_Entertainment_Awards.jpg'},
-    {'name': 'K.K.',              'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8d/KK_in_2016.jpg/440px-KK_in_2016.jpg'},
+    {'name': 'K.K.',              'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/69/KK_singing_at_NIT_Calicut.jpg/500px-KK_singing_at_NIT_Calicut.jpg'},
 ]
 
 
