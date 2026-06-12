@@ -162,7 +162,7 @@ export default function App() {
   const [isLoading,    setIsLoading]        = useState(false);
   const [isYoutubeFallback, setIsYoutubeFallback] = useState(false);
   const navBarWidthRef       = useRef<number>(0);
-  const progressBarWidthRef  = useRef<number>(0);
+  const progressBarWidthRef = useRef<number>(0);
   const sessionHistoryRef    = useRef<any[]>([]);
 
   // ── RNTP hooks (must be at top level) ──
@@ -356,10 +356,9 @@ export default function App() {
 
   // ─── Nav pill — animate when screen changes (pixel-based, no stale closure) ──
   const navScreenToIdx = useCallback((screen: string) => {
-    if (screen === 'search') return 1;
-    if (screen === 'library' || screen === 'playlist_view' || screen === 'listen_later') return 2;
-    if (screen === 'downloads') return 3;
-    if (screen === 'settings')  return 4;
+    if (screen === 'library' || screen === 'playlist_view' || screen === 'listen_later') return 1;
+    if (screen === 'downloads') return 2;
+    if (screen === 'settings')  return 3;
     return 0;
   }, []);
 
@@ -368,7 +367,7 @@ export default function App() {
     const w = navBarWidthRef.current;
     if (w > 0) {
       Animated.spring(navPillAnim, {
-        toValue: idx * (w / 5),
+        toValue: idx * (w / 4),
         useNativeDriver: true,
         damping: 22, stiffness: 200, mass: 0.7,
       } as any).start();
@@ -2033,7 +2032,7 @@ export default function App() {
               )}
             </View>
 
-            {/* ── HOME FEED ── */}
+            /* ── HOME FEED ── */
               <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefreshHome} tintColor={moodColor} />}>
 
                 {/* Recently Played */}
@@ -2229,8 +2228,10 @@ export default function App() {
 
                                 <View style={{ height: 20 }} />
               </ScrollView>
+
           </View>
         )}
+        
 {/* ── ALBUM VIEW (Full Screen) ─────────────────────────────────────── */}
         {currentScreen === 'album_view' && selectedAlbum && (
           <View style={[styles.screenBody, { padding: 0 }]}>
