@@ -30,6 +30,6 @@ export async function PlaybackService() {
   TrackPlayer.addEventListener(Event.RemoteDuck, async ({ paused, permanent }: any) => {
     if (permanent) await TrackPlayer.reset();
     else if (paused) await TrackPlayer.pause();
-    else await TrackPlayer.play();
+    // Do not automatically resume playback to prevent random unpauses
   });
 }

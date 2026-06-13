@@ -1764,10 +1764,14 @@ export default function App() {
        const res = await fetch(`https://saavn.dev/api/songs/${activeTrack.id}/suggestions`);
        const json = await res.json();
        if (json.success && json.data && json.data.length > 0) {
-          const nextSong = json.data[0];
-          setAutoplayQueue(json.data.slice(1));
-          await handleTrackPress(nextSong);
-          return;
+          // Filter out the current track so it doesn't loop repeatedly
+          const filteredData = json.data.filter((s: any) => String(s.id) !== String(activeTrack.id));
+          if (filteredData.length > 0) {
+            const nextSong = filteredData[0];
+            setAutoplayQueue(filteredData.slice(1));
+            await handleTrackPress(nextSong);
+            return;
+          }
        }
     } catch {}
     
