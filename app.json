@@ -2,14 +2,14 @@
   "expo": {
     "name": "Zyra",
     "slug": "zyra-music",
-    "version": "1.0.9",
+    "version": "1.0.11",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "splash": {
-      "image": "./assets/icon.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#05050f"
+      "backgroundColor": "#12121c"
     },
     "assetBundlePatterns": [
       "**/*"
@@ -18,8 +18,12 @@
       "supportsTablet": true
     },
     "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#12121c"
+      },
       "package": "com.babulu2006.zyramusic",
-      "versionCode": 10,
+      "versionCode": 11,
       "permissions": [
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"

@@ -653,6 +653,23 @@ export default function App() {
       const artist = s.artists?.primary?.map((a: any) => a.name).join(', ') || '';
       return { id: s.id, title: s.name || '', artist, image, url, duration: s.duration || 0 };
     };
+    fetch(`${BACKEND_URL}/api/artists/top`).then(r => r.json()).then(j => { 
+      if (j.success && j.artists?.length > 0) {
+        setTopArtists(j.artists);
+      } else {
+        throw new Error('Fallback');
+      }
+    }).catch(() => {
+      // Hardcoded fallback list
+      setTopArtists([
+        { name: 'Arijit Singh', image: 'https://c.saavncdn.com/artists/Arijit_Singh_002_20230323062147_500x500.jpg' },
+        { name: 'Shreya Ghoshal', image: 'https://c.saavncdn.com/artists/Shreya_Ghoshal_002_20230623080646_500x500.jpg' },
+        { name: 'Pritam', image: 'https://c.saavncdn.com/artists/Pritam_002_20230616111151_500x500.jpg' },
+        { name: 'Atif Aslam', image: 'https://c.saavncdn.com/artists/Atif_Aslam_500x500.jpg' },
+        { name: 'Neha Kakkar', image: 'https://c.saavncdn.com/artists/Neha_Kakkar_002_20230310114002_500x500.jpg' },
+        { name: 'Armaan Malik', image: 'https://c.saavncdn.com/artists/Armaan_Malik_002_20230202111816_500x500.jpg' },
+      ]);
+    });
     const trendingQueries = [
       'global+top+50',
       'latest+bollywood+hits',
@@ -692,7 +709,7 @@ export default function App() {
       });
     })();
 
-    fetch(`${BACKEND_URL}/api/artists/top`).then(r => r.json()).then(j => { if (j.success) setTopArtists(j.artists || []); }).catch(() => {});
+
     return () => clearInterval(keepAlive);
   }, []);
 
@@ -2411,7 +2428,7 @@ export default function App() {
             )}
 
             {/* Search Filters */}
-            {!isSearchFocused && searchQuery.length > 0 && !isLoading && !isSearching && (
+            {!isLoading && !isSearching && (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
                 {['All', 'Top Results', 'Songs', 'Albums', 'Movies'].map(filter => {
                   const filterKey = filter.toLowerCase().replace(' ', '_');
@@ -2479,8 +2496,8 @@ export default function App() {
                           {album.image ? <Image source={{ uri: album.image }} style={{ width: 50, height: 50 }} /> : <Ionicons name="albums" size={24} color={moodColor} style={{ alignSelf: 'center', marginTop: 13 }} />}
                         </View>
                         <View style={styles.trackInfo}>
-                          <Text numberOfLines={1} style={styles.trackTitle}>{album.name}</Text>
-                          <Text style={styles.trackArtist}>{album.songCount || 0} songs</Text>
+                          <Text numberOfLines={1} style={styles.trackTitle}>{album.name || album.title}</Text>
+                          <Text numberOfLines={1} style={styles.trackArtist}>{album.primaryArtists || album.artist || album.description || 'Album'}</Text>
                         </View>
                         <Ionicons name="chevron-forward" size={18} color="#666" />
                       </TouchableOpacity>
@@ -2498,8 +2515,8 @@ export default function App() {
                           {album.image ? <Image source={{ uri: album.image }} style={{ width: 50, height: 50 }} /> : <Ionicons name="film" size={24} color={moodColor} style={{ alignSelf: 'center', marginTop: 13 }} />}
                         </View>
                         <View style={styles.trackInfo}>
-                          <Text numberOfLines={1} style={styles.trackTitle}>{album.name}</Text>
-                          <Text style={styles.trackArtist}>{album.songCount || 0} songs</Text>
+                          <Text numberOfLines={1} style={styles.trackTitle}>{album.name || album.title}</Text>
+                          <Text numberOfLines={1} style={styles.trackArtist}>{album.primaryArtists || album.artist || album.description || 'Album'}</Text>
                         </View>
                         <Ionicons name="chevron-forward" size={18} color="#666" />
                       </TouchableOpacity>
