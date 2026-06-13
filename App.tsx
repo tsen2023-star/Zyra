@@ -3066,12 +3066,13 @@ export default function App() {
               pointerEvents="none"
               style={{
                 position: 'absolute',
-                top: 6, bottom: 6, left: 0,
+                top: 0, bottom: 0, left: 0,
                 width: '25%',
+                alignItems: 'center',
                 transform: [{ translateX: navPillAnim }],
               }}
             >
-              <View style={{ marginHorizontal: 8, flex: 1, borderRadius: 16, backgroundColor: moodColor + '22' }} />
+              <View style={{ width: 64, height: 32, borderRadius: 16, backgroundColor: moodColor + '22', marginTop: 4 }} />
             </Animated.View>
             {tabs.map((tab, idx) => {
               const active = idx === activeIdx;
