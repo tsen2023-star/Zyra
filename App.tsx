@@ -2915,7 +2915,7 @@ export default function App() {
       {/* ════════════════ MINI PLAYER ════════════════ */}
       {activeTrack && (
         <View
-          style={{ position: 'absolute', bottom: Platform.OS === 'ios' ? 100 : 85, left: 16, right: 16, zIndex: 999 }}
+          style={{ position: 'absolute', bottom: Platform.OS === 'ios' ? 120 : 105, left: 16, right: 16, zIndex: 999 }}
           {...miniPlayerPan.panHandlers}
         >
           {/* Circular ring using react-native-svg for smooth rendering */}
@@ -3925,8 +3925,8 @@ const styles = StyleSheet.create({
   miniPlayerPlayBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
 
   // Bottom nav — M3 NavigationBar
-  bottomNav:   { flexDirection: 'row', borderTopWidth: 0, paddingBottom: Platform.OS === 'ios' ? 25 : 12, paddingTop: 16 },
-  navButton:   { flex: 1, alignItems: 'center', paddingVertical: 10, zIndex: 1 },
+  bottomNav:   { flexDirection: 'row', borderTopWidth: 0, paddingBottom: Platform.OS === 'ios' ? 20 : 6, paddingTop: 10 },
+  navButton:   { flex: 1, alignItems: 'center', paddingVertical: 8, zIndex: 1 },
   navText:     { fontSize: 10, fontWeight: '600', marginTop: 2 },
 
   // Modals
