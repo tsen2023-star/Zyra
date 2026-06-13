@@ -2393,23 +2393,6 @@ export default function App() {
               </View>
             )}
             
-            {isSearchFocused && searchQuery.length > 0 && searchSuggestions.length > 0 && (
-              <View style={styles.historyDropdown}>
-                <Text style={styles.historyHeader}>Suggestions</Text>
-                {searchSuggestions.map((item, i) => (
-                  <TouchableOpacity key={i} style={styles.historyItem} onPress={() => {
-                    setSearchQuery(item); setIsSearchFocused(false);
-                  }}>
-                    <Ionicons name="search-outline" size={16} color="#666" style={{ marginRight: 12 }} />
-                    <Text style={styles.historyItemText}>{item}</Text>
-                    <TouchableOpacity onPress={() => setSearchQuery(item)} hitSlop={{ top:10,bottom:10,left:10,right:10 }}>
-                      <Ionicons name="arrow-up-outline" size={16} color={moodColor} style={{ transform: [{ rotate: '45deg' }] }} />
-                    </TouchableOpacity>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-
             {isLoading || isSearching ? (
               <View style={styles.centeredBody}>
                 <ActivityIndicator size="large" color={moodColor} />
@@ -2417,46 +2400,15 @@ export default function App() {
               </View>
             ) : (
               <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-                {/* Top Results */}
-                {songsList.length > 0 && (
-                  <View style={{ marginBottom: 24 }}>
-                    <Text style={styles.sectionHeader}>Top Results</Text>
-                    {songsList.slice(0, 3).map((song: any, index: number) => (
-                      <TouchableOpacity key={index} style={[styles.topResultCard, { borderColor: index === 0 ? moodColor + '88' : 'rgba(255,255,255,0.08)', backgroundColor: '#16161f' }]} onPress={() => { setAutoplayQueue([]); handleTrackPress(song); }}>
-                        <Image source={{ uri: song.image }} style={{ width: 56, height: 56, borderRadius: 12, marginRight: 14 }} />
-                        <View style={styles.trackInfo}>
-                          <Text numberOfLines={1} style={[styles.trackTitle, { fontSize: index === 0 ? 16 : 14 }]}>{song.title}</Text>
-                          <Text numberOfLines={1} style={styles.trackArtist}>{song.artist}</Text>
-                        </View>
-                        {index === 0 && (
-                          <View style={{ backgroundColor: moodColor + '22', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
-                            <Text style={{ color: moodColor, fontSize: 10, fontWeight: '800' }}>TOP</Text>
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-
-                {/* Albums */}
-                {albumResults.length > 0 && (
-                  <View style={{ marginBottom: 24 }}>
-                    <Text style={styles.sectionHeader}>Albums</Text>
-                    {albumResults.map((album: any, i: number) => (
-                      <TouchableOpacity key={i} style={[styles.searchResultRow, { backgroundColor: '#16161f' }]} onPress={() => openAlbumView(album)}>
-                        <View style={{ width: 50, height: 50, borderRadius: 12, backgroundColor: '#222', marginRight: 14, overflow: 'hidden' }}>
-                          {album.image ? <Image source={{ uri: album.image }} style={{ width: 50, height: 50 }} /> : <Ionicons name="albums" size={24} color={moodColor} style={{ alignSelf: 'center', marginTop: 13 }} />}
-                        </View>
-                        <View style={styles.trackInfo}>
-                          <Text numberOfLines={1} style={styles.trackTitle}>{album.name}</Text>
-                          <Text style={styles.trackArtist}>{album.songCount || 0} songs</Text>
-                        </View>
-                        <Ionicons name="chevron-forward" size={18} color="#666" />
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-
+                {songsList.map((song: any, index: number) => (
+                  <TouchableOpacity key={index} style={[styles.searchResultRow, { backgroundColor: activeTrack?.id === song.id ? moodColor + '11' : 'transparent' }]} onPress={() => { setAutoplayQueue(songsList.slice(index + 1)); handleTrackPress(song); }}>
+                    <Image source={{ uri: song.image }} style={{ width: 50, height: 50, borderRadius: 12, marginRight: 14 }} />
+                    <View style={styles.trackInfo}>
+                      <Text numberOfLines={1} style={styles.trackTitle}>{song.title}</Text>
+                      <Text numberOfLines={1} style={styles.trackArtist}>{song.artist}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
                 <View style={{ height: 40 }} />
               </ScrollView>
             )}
