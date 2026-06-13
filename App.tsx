@@ -357,10 +357,9 @@ export default function App() {
 
   // ─── Nav pill — animate when screen changes (pixel-based, no stale closure) ──
   const navScreenToIdx = useCallback((screen: string) => {
-    if (screen === 'search') return 1;
-    if (screen === 'library' || screen === 'playlist_view' || screen === 'listen_later') return 2;
-    if (screen === 'downloads') return 3;
-    if (screen === 'settings')  return 4;
+    if (screen === 'library' || screen === 'playlist_view' || screen === 'listen_later') return 1;
+    if (screen === 'downloads') return 2;
+    if (screen === 'settings')  return 3;
     return 0;
   }, []);
 
@@ -3046,7 +3045,6 @@ export default function App() {
       {(() => {
         const tabs = [
           { screen: 'all_songs', icon: 'home-outline',     iconFilled: 'home',     label: 'Home'      },
-          { screen: 'search',    icon: 'search-outline',   iconFilled: 'search',   label: 'Search'    },
           { screen: 'library',   icon: 'library-outline',  iconFilled: 'library',  label: 'Library'   },
           { screen: 'downloads', icon: 'folder-outline',   iconFilled: 'folder',   label: 'Downloads' },
           { screen: 'settings',  icon: 'settings-outline', iconFilled: 'settings', label: 'Settings'  },
@@ -3063,7 +3061,7 @@ export default function App() {
               const w = e.nativeEvent.layout.width;
               navBarWidthRef.current = w;
               // Initial placement — jump to correct position without animation
-              navPillAnim.setValue(activeIdx * (w / 5));
+              navPillAnim.setValue(activeIdx * (w / 4));
             }}
           >
             {/* Sliding pill — uses pixel-based translateX (safe in RN) */}
@@ -3072,7 +3070,7 @@ export default function App() {
               style={{
                 position: 'absolute',
                 top: 8, left: 0,
-                width: '20%',
+                width: '25%',
                 transform: [{ translateX: navPillAnim }],
               }}
             >
