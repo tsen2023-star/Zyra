@@ -598,6 +598,9 @@ export default function App() {
 
   // ─── Initial load ─────────────────────────────────────────────────────────────
   useEffect(() => {
+    // Safety net: always show the app within 8 seconds even if backend is cold-starting
+    const safetyTimer = setTimeout(() => { setIsAppReady(true); }, 8000);
+
     const init = async () => {
       try {
         const storedToken    = await AsyncStorage.getItem('token');
@@ -627,11 +630,15 @@ export default function App() {
           setUserId(storedUserId);
           setUsername(storedUsername || '');
           setIsLoggedIn(true);
-          await loadUserData(storedToken);
+          // [FIX] Load user data with a 10s timeout to avoid hanging on slow backend
+          await Promise.race([
+            loadUserData(storedToken),
+            new Promise(r => setTimeout(r, 10000)),
+          ]);
           loadRecentlyPlayed(storedToken);
         }
       } catch (e) { console.error('Init error', e); }
-      finally { setIsAppReady(true); }
+      finally { clearTimeout(safetyTimer); setIsAppReady(true); }
     };
     init();
 
