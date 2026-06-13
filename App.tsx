@@ -768,8 +768,6 @@ export default function App() {
           if (tok && meta) {
             fetch(`${BACKEND_URL}/api/user/history`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` }, body: JSON.stringify(meta) }).catch(() => {});
           }
-          const remaining = queue.length - event.nextTrack - 1;
-          if (remaining <= 1) prefillQueue();
         }
       } catch {}
     }
@@ -1250,28 +1248,7 @@ export default function App() {
     }
   }, [resolveStreamUrl]);
 
-  // ─── Pre-fill queue ───────────────────────────────────────────────────────────
-  const prefillQueue = useCallback(async () => {
-    const { activeTrack: at, userId: uid, currentMood: mood } = queueCtxRef.current;
-    if (!at) return;
-    let filled = false;
-    // 1. Try backend smart autoplay
-    try {
-      const qs  = `songId=${at.id}&userId=${uid||''}&mood=${mood}`;
-      const res = await fetch(`${BACKEND_URL}/api/autoplay?${qs}`);
-      const json = await res.json();
-      if (json.success && json.song) {
-        await addSongsToQueue([json.song], 1);
-        const q = await TrackPlayer.getQueue();
-        if (q.length === 1) await TrackPlayer.play();
-        filled = true;
-      }
-    } catch {}
-    // 2. Fallback: same-artist from Saavn.dev → then title keywords → then random
-    if (!filled && handleAutoNextRef.current) {
-      await handleAutoNextRef.current();
-    }
-  }, [addSongsToQueue]);
+  // ─── Pre-fill queue removed ───────────────────────────────────────────────────────────
 
   // ─── Fetch artist tracks ──────────────────────────────────────────────────────
   const fetchArtist = async (artist: any) => {
@@ -2212,32 +2189,6 @@ export default function App() {
                   </View>
                 )}
 
-                {/* ── Top Artists ── */}
-                {topArtists.length > 0 && !isSearchFocused && (
-                  <View style={{ marginBottom: 28, marginTop: 10 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <Text style={styles.echoSectionLabel}>Top Artists</Text>
-                    </View>
-                    <Text style={{ color: theme.subtext, fontSize: 11, fontStyle: 'italic', marginBottom: 12, textTransform: 'uppercase' }}>DISCOVER TRENDING VOICES</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                      {topArtists.map((art: any, i: number) => (
-                        <TouchableOpacity key={i} style={{ width: 100, marginRight: 16, alignItems: 'center' }}
-                          onPress={() => fetchArtist(art)}>
-                          <View style={{ width: 90, height: 90, borderRadius: 45, overflow: 'hidden', backgroundColor: theme.surface, marginBottom: 8, borderWidth: 2, borderColor: moodColor + '88' }}>
-                            {art.image ? (
-                              <Image source={{ uri: typeof art.image === 'string' ? art.image : (art.image[art.image.length - 1]?.url || art.image[0]?.url) }} style={{ width: '100%', height: '100%' }} />
-                            ) : (
-                              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: moodColor + '44' }}>
-                                <Ionicons name="person" size={40} color={moodColor} />
-                              </View>
-                            )}
-                          </View>
-                          <Text numberOfLines={1} style={{ color: '#fff', fontSize: 12, fontWeight: 'bold', textAlign: 'center' }}>{art.name || art.title}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  </View>
-                )}
 
                 {/* ── Moods & Genres — 3-column grid ── */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -2312,7 +2263,32 @@ export default function App() {
                   ))}
                 </View>
 
-
+                {/* ── Top Artists (3-column grid) ── */}
+                {topArtists.length > 0 && !isSearchFocused && (
+                  <View style={{ marginBottom: 28, marginTop: 10 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Text style={styles.echoSectionLabel}>Top Artists</Text>
+                    </View>
+                    <Text style={{ color: theme.subtext, fontSize: 11, fontStyle: 'italic', marginBottom: 12, textTransform: 'uppercase' }}>DISCOVER TRENDING VOICES</Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                      {topArtists.map((art: any, i: number) => (
+                        <TouchableOpacity key={i} style={{ width: '31%', alignItems: 'center', marginBottom: 16 }}
+                          onPress={() => fetchArtist(art)}>
+                          <View style={{ width: 80, height: 80, borderRadius: 40, overflow: 'hidden', backgroundColor: theme.surface, marginBottom: 8, borderWidth: 2, borderColor: moodColor + '88' }}>
+                            {art.image ? (
+                              <Image source={{ uri: typeof art.image === 'string' ? art.image : (art.image[art.image.length - 1]?.url || art.image[0]?.url) }} style={{ width: '100%', height: '100%' }} />
+                            ) : (
+                              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: moodColor + '44' }}>
+                                <Ionicons name="person" size={36} color={moodColor} />
+                              </View>
+                            )}
+                          </View>
+                          <Text numberOfLines={1} style={{ color: '#fff', fontSize: 12, fontWeight: 'bold', textAlign: 'center' }}>{art.name || art.title}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                )}
 
                 {/* Search history — only show when search bar is focused and query is empty */}
                 {isSearchFocused && searchHistory.length > 0 && (
@@ -2395,8 +2371,8 @@ export default function App() {
               )}
             </View>
 
-            {/* Search History */}
-            {isSearchFocused && searchHistory.length > 0 && (
+            {/* Search History & Suggestions */}
+            {isSearchFocused && !searchQuery && searchHistory.length > 0 && (
               <View style={styles.historyDropdown}>
                 <Text style={styles.historyHeader}>Recent Searches</Text>
                 {searchHistory.map((item, i) => (
@@ -2407,6 +2383,23 @@ export default function App() {
                     <Text style={styles.historyItemText}>{item}</Text>
                     <TouchableOpacity onPress={() => removeSearchHistory(item)} hitSlop={{ top:10,bottom:10,left:10,right:10 }}>
                       <Ionicons name="close" size={16} color="#666" />
+                    </TouchableOpacity>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            
+            {isSearchFocused && searchQuery.length > 0 && searchSuggestions.length > 0 && (
+              <View style={styles.historyDropdown}>
+                <Text style={styles.historyHeader}>Suggestions</Text>
+                {searchSuggestions.map((item, i) => (
+                  <TouchableOpacity key={i} style={styles.historyItem} onPress={() => {
+                    setSearchQuery(item); setIsSearchFocused(false);
+                  }}>
+                    <Ionicons name="search-outline" size={16} color="#666" style={{ marginRight: 12 }} />
+                    <Text style={styles.historyItemText}>{item}</Text>
+                    <TouchableOpacity onPress={() => setSearchQuery(item)} hitSlop={{ top:10,bottom:10,left:10,right:10 }}>
+                      <Ionicons name="arrow-up-outline" size={16} color={moodColor} style={{ transform: [{ rotate: '45deg' }] }} />
                     </TouchableOpacity>
                   </TouchableOpacity>
                 ))}
@@ -2918,7 +2911,7 @@ export default function App() {
       {/* ════════════════ MINI PLAYER ════════════════ */}
       {activeTrack && (
         <View
-          style={{ position: 'absolute', bottom: Platform.OS === 'ios' ? 95 : 75, left: 18, right: 18, zIndex: 999 }}
+          style={{ position: 'absolute', bottom: Platform.OS === 'ios' ? 100 : 85, left: 16, right: 16, zIndex: 999 }}
           {...miniPlayerPan.panHandlers}
         >
           {/* Circular ring using react-native-svg for smooth rendering */}
@@ -3069,12 +3062,12 @@ export default function App() {
               pointerEvents="none"
               style={{
                 position: 'absolute',
-                top: 8, left: 0,
+                top: 6, bottom: 6, left: 0,
                 width: '25%',
                 transform: [{ translateX: navPillAnim }],
               }}
             >
-              <View style={{ marginHorizontal: 8, height: 32, borderRadius: 16, backgroundColor: moodColor + '22' }} />
+              <View style={{ marginHorizontal: 8, flex: 1, borderRadius: 16, backgroundColor: moodColor + '22' }} />
             </Animated.View>
             {tabs.map((tab, idx) => {
               const active = idx === activeIdx;
