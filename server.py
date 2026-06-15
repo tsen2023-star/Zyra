@@ -881,34 +881,37 @@ EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD', '')
 
 
 def send_otp_email(to_email: str, otp: str) -> bool:
-    """Send OTP via Gmail SMTP. Falls back to console log if env vars not set."""
-    if not EMAIL_FROM or not EMAIL_PASSWORD:
+    """Send OTP via Resend API (since Render blocks standard SMTP)."""
+    RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
+    if not RESEND_API_KEY or not EMAIL_FROM:
         print(f'[OTP DEBUG] OTP for {to_email}: {otp}')  # dev fallback
         return True
     try:
-        body = f"""Hi,
-
-Your Zyra Music password reset OTP is:
-
-    {otp}
-
-This code expires in 10 minutes.
-If you did not request this, please ignore this email.
-
-— The Zyra Music Team
-"""
-        msg = MIMEText(body)
-        msg['Subject'] = 'Zyra Music — Password Reset OTP'
-        msg['From']    = EMAIL_FROM
-        msg['To']      = to_email
-        with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(EMAIL_FROM, EMAIL_PASSWORD)
-            server.send_message(msg)
+        html_body = f"""
+        <div style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2>Zyra Music Password Reset</h2>
+            <p>Your password reset OTP is:</p>
+            <h1 style="color: #00ffcc; background: #050515; padding: 10px; display: inline-block; border-radius: 5px;">{otp}</h1>
+            <p>This code expires in 10 minutes.</p>
+            <p>If you did not request this, please ignore this email.</p>
+        </div>
+        """
+        payload = {
+            "from": f"Zyra Music <{EMAIL_FROM}>",
+            "to": [to_email],
+            "subject": "Zyra Music — Password Reset OTP",
+            "html": html_body
+        }
+        headers = {
+            "Authorization": f"Bearer {RESEND_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        import requests
+        r = requests.post('https://api.resend.com/emails', json=payload, headers=headers, timeout=10)
+        r.raise_for_status()
         return True
     except Exception as e:
-        print(f'Email send error: {e}')
+        print(f'Resend email error: {e}')
         return False
 
 @app.route('/api/auth/test-smtp', methods=['GET'])
