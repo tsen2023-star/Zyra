@@ -911,6 +911,18 @@ If you did not request this, please ignore this email.
         print(f'Email send error: {e}')
         return False
 
+@app.route('/api/auth/test-smtp', methods=['GET'])
+def test_smtp():
+    try:
+        if not EMAIL_FROM or not EMAIL_PASSWORD:
+            return jsonify({'success': False, 'error': 'Environment variables EMAIL_FROM or EMAIL_PASSWORD are missing.'})
+        with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT, timeout=5) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(EMAIL_FROM, EMAIL_PASSWORD)
+        return jsonify({'success': True, 'message': f'Successfully authenticated as {EMAIL_FROM}'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/auth/forgot-password', methods=['POST'])
 def forgot_password():
