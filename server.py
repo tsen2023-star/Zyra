@@ -1369,6 +1369,7 @@ def random_song():
 
 # ─── Artist Routes ────────────────────────────────────────────────────────────
 
+TOP_BOLLYWOOD_ARTISTS = [
     {'name': 'Arijit Singh',      'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0b/Arijit_Singh_at_the_IIFA_Awards_%282019%29.jpg/440px-Arijit_Singh_at_the_IIFA_Awards_%282019%29.jpg'},
     {'name': 'Atif Aslam',        'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c9/Atif_Aslam_in_2020.jpg/440px-Atif_Aslam_in_2020.jpg'},
     {'name': 'AR Rahman',         'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/A_R_Rahman_in_2018.jpg/440px-A_R_Rahman_in_2018.jpg'},
