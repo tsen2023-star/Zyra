@@ -833,8 +833,28 @@ export default function App() {
           if (title && !suggestions.includes(title)) suggestions.push(title);
         });
       });
-      setSearchSuggestions(suggestions.slice(0, 10));
+      if (suggestions.length > 0) {
+        setSearchSuggestions(suggestions.slice(0, 10));
+        return;
+      }
     } catch {}
+    // Fallback
+    try {
+      const resp = await fetch(`https://saavn.dev/api/search?query=${encodeURIComponent(query)}`);
+      const json = await resp.json();
+      const suggestions: string[] = [];
+      ['topQuery', 'songs', 'albums', 'artists'].forEach(k => {
+        const items = json.data?.[k]?.results || [];
+        items.forEach((item: any) => {
+          let title = item.title || item.name || '';
+          title = title.replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+          if (title && !suggestions.includes(title)) suggestions.push(title);
+        });
+      });
+      setSearchSuggestions(suggestions.slice(0, 10));
+    } catch {
+      setSearchSuggestions([]);
+    }
   };
 
   const openAlbumView = async (albumBase: any) => {
@@ -1072,22 +1092,25 @@ export default function App() {
   const fetchMovieResults = async (query: string) => {
     try {
       const ctrl1 = new AbortController(); const t1 = setTimeout(() => ctrl1.abort(), 8000);
-      const r = await fetch(`${BACKEND_URL}/api/search?query=${encodeURIComponent(query)}`, { signal: ctrl1.signal });
+      const r = await fetch(`https://saavn.dev/api/search/albums?query=${encodeURIComponent(query)}&limit=15`, { signal: ctrl1.signal });
       clearTimeout(t1);
       const j = await r.json();
-      if (j.success && j.data?.albums?.length > 0) {
-        const movies = j.data.albums.map((a: any) => {
-          return { id: a.id, name: a.name || '', description: a.artist || '', image: a.image, year: '', songCount: 0, artists: a.artist || '' };
+      if (j.success && j.data?.results?.length > 0) {
+        const albums = j.data.results.map((a: any) => {
+          const imgs: any[] = a.image || [];
+          const image = imgs.find((i: any) => i.quality === '500x500')?.url || imgs[imgs.length - 1]?.url || '';
+          return { id: a.id, name: a.name || a.title || '', description: a.description || a.year || 'Album', image: image, year: a.year || '', songCount: a.songCount || 0, artists: a.description || a.year || '' };
         });
-        setMovieResults(movies);
+        setAlbumResults(albums);
+        setMovieResults(albums);
         
         // Auto-expand if the movie name exactly matches the search query
-        const exactMatch = movies.find((m: any) => m.name.toLowerCase() === query.toLowerCase().trim());
+        const exactMatch = albums.find((m: any) => m.name.toLowerCase() === query.toLowerCase().trim());
         if (exactMatch) {
           openMovie(exactMatch);
         }
-      } else { setMovieResults([]); }
-    } catch { setMovieResults([]); }
+      } else { setAlbumResults([]); setMovieResults([]); }
+    } catch { setAlbumResults([]); setMovieResults([]); }
   };
 
   // Open a movie — fetch all its songs from saavn.dev albums endpoint
@@ -1133,7 +1156,7 @@ export default function App() {
           return { id: s.id, title: s.name || '', artist, image, url: audioUrl, duration: s.duration || 0 };
         });
         setSongsList(results);
-        setAlbumResults([]);
+        // Do not clear albumResults here; fetchMovieResults will populate them.
         // Fire movie search in parallel — don't block song results
         fetchMovieResults(query);
         return;
@@ -1750,33 +1773,8 @@ export default function App() {
   // ─── Genre-smart auto-next ────────────────────────────────────────────────────
   const handleAutoNext = async () => {
     if (!activeTrack) return;
-    const artist = (activeTrack.artist || '').split(',')[0].trim();
-    const title  = activeTrack.title || '';
     
-    // Use backend queue first if available
-    try {
-      const qs  = `songId=${activeTrack.id}&userId=${userId||''}&mood=${currentMood}`;
-      const res = await fetch(`${BACKEND_URL}/api/recommendations/queue?${qs}`);
-      const json = await res.json();
-      if (json.success && json.queue && json.queue.length > 0) {
-        const nextSong = json.queue[0];
-        setAutoplayQueue(json.queue.slice(1));
-        await handleTrackPress(nextSong);
-        return;
-      }
-    } catch {}
-
-    // Fallback 1: Backend Random song
-    try {
-      const res  = await fetch(`${BACKEND_URL}/api/random`);
-      const json = await res.json();
-      if (json.success && json.data?.song) {
-        await handleTrackPress(json.data.song);
-        return;
-      }
-    } catch {}
-
-    // Fallback 2: Saavn API Suggestions (Local)
+    // Primary: Saavn API Suggestions (Provides best same-genre matching)
     try {
        const res = await fetch(`https://saavn.dev/api/songs/${activeTrack.id}/suggestions`);
        const json = await res.json();
@@ -1790,6 +1788,29 @@ export default function App() {
             return;
           }
        }
+    } catch {}
+
+    // Fallback 1: Backend Queue
+    try {
+      const qs  = `songId=${activeTrack.id}&userId=${userId||''}&mood=${currentMood}`;
+      const res = await fetch(`${BACKEND_URL}/api/recommendations/queue?${qs}`);
+      const json = await res.json();
+      if (json.success && json.queue && json.queue.length > 0) {
+        const nextSong = json.queue[0];
+        setAutoplayQueue(json.queue.slice(1));
+        await handleTrackPress(nextSong);
+        return;
+      }
+    } catch {}
+
+    // Fallback 2: Backend Random song
+    try {
+      const res  = await fetch(`${BACKEND_URL}/api/random`);
+      const json = await res.json();
+      if (json.success && json.data?.song) {
+        await handleTrackPress(json.data.song);
+        return;
+      }
     } catch {}
     
     // Fallback 3: Saavn API Artist Search (Local)
@@ -2433,7 +2454,7 @@ export default function App() {
                 {['All', 'Top Results', 'Songs', 'Albums', 'Movies'].map(filter => {
                   const filterKey = filter.toLowerCase().replace(' ', '_');
                   return (
-                    <TouchableOpacity key={filter} onPress={() => setSearchFilter(filterKey as any)} style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: searchFilter === filterKey ? moodColor : '#1e1e2a', marginRight: 10, borderWidth: 1, borderColor: searchFilter === filterKey ? moodColor : 'rgba(255,255,255,0.07)' }}>
+                    <TouchableOpacity key={filter} onPress={() => setSearchFilter(filterKey as any)} style={{ alignSelf: 'flex-start', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: searchFilter === filterKey ? moodColor : '#1e1e2a', marginRight: 10, borderWidth: 1, borderColor: searchFilter === filterKey ? moodColor : 'rgba(255,255,255,0.07)' }}>
                       <Text style={{ color: searchFilter === filterKey ? '#fff' : '#9896a8', fontSize: 13, fontWeight: '600' }}>{filter}</Text>
                     </TouchableOpacity>
                   );
@@ -2497,7 +2518,7 @@ export default function App() {
                         </View>
                         <View style={styles.trackInfo}>
                           <Text numberOfLines={1} style={styles.trackTitle}>{album.name || album.title}</Text>
-                          <Text numberOfLines={1} style={styles.trackArtist}>{album.primaryArtists || album.artist || album.description || 'Album'}</Text>
+                          <Text numberOfLines={1} style={styles.trackArtist}>{album.description || album.primaryArtists || album.artist || 'Album'}</Text>
                         </View>
                         <Ionicons name="chevron-forward" size={18} color="#666" />
                       </TouchableOpacity>
@@ -2516,7 +2537,7 @@ export default function App() {
                         </View>
                         <View style={styles.trackInfo}>
                           <Text numberOfLines={1} style={styles.trackTitle}>{album.name || album.title}</Text>
-                          <Text numberOfLines={1} style={styles.trackArtist}>{album.primaryArtists || album.artist || album.description || 'Album'}</Text>
+                          <Text numberOfLines={1} style={styles.trackArtist}>{album.description || album.primaryArtists || album.artist || 'Album'}</Text>
                         </View>
                         <Ionicons name="chevron-forward" size={18} color="#666" />
                       </TouchableOpacity>
@@ -3139,7 +3160,7 @@ export default function App() {
                 transform: [{ translateX: navPillAnim }],
               }}
             >
-              <View style={{ width: 64, height: 32, borderRadius: 16, backgroundColor: moodColor + '22', marginTop: 4 }} />
+              <View style={{ width: 64, height: 32, borderRadius: 16, backgroundColor: moodColor + '22', marginTop: 10 }} />
             </Animated.View>
             {tabs.map((tab, idx) => {
               const active = idx === activeIdx;
