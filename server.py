@@ -914,6 +914,29 @@ def send_otp_email(to_email: str, otp: str) -> bool:
         print(f'Resend email error: {e}')
         return False
 
+@app.route('/api/auth/test-resend', methods=['GET'])
+def test_resend():
+    RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
+    EMAIL_FROM = os.environ.get('EMAIL_FROM', '')
+    if not RESEND_API_KEY: return jsonify({'success': False, 'error': 'No RESEND_API_KEY found'})
+    
+    payload = {
+        "from": f"Zyra Music <{EMAIL_FROM}>",
+        "to": ["babulal1975@gmail.com"], # A dummy destination just to test the API acceptance
+        "subject": "Test",
+        "html": "<p>Test</p>"
+    }
+    headers = {
+        "Authorization": f"Bearer {RESEND_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    import requests
+    try:
+        r = requests.post('https://api.resend.com/emails', json=payload, headers=headers, timeout=10)
+        return jsonify({'success': r.status_code == 200, 'status': r.status_code, 'response': r.text})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
 @app.route('/api/auth/test-smtp', methods=['GET'])
 def test_smtp():
     try:
