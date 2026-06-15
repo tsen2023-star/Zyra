@@ -15,6 +15,7 @@ import * as FileSystem from 'expo-file-system';
 import { Accelerometer } from 'expo-sensors';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle } from 'react-native-svg';
+import Slider from '@react-native-community/slider';
 
 const BACKEND_URL = 'https://zyra-backend-9nvt.onrender.com';
 
@@ -191,7 +192,7 @@ export default function App() {
   const [lyricsFontSize,   setLyricsFontSize]   = useState<'sm'|'md'|'lg'>('md');
   const [parsedLyrics,     setParsedLyrics]     = useState<{time:number,text:string}[]>([]);
   const [currentLyricIndex,setCurrentLyricIndex]= useState(-1);
-  const lyricsScrollRef = useRef<ScrollView>(null);
+  const lyricsScrollRef = useRef<any>(null);
 
   // ── Crossfade ──
   const [crossfadeEnabled, setCrossfadeEnabled] = useState(false);
@@ -551,17 +552,6 @@ export default function App() {
 
 
 
-  // ─── [NEW] Save resume position every 5 seconds ───────────────────────────────
-  useEffect(() => {
-    if (!activeTrack || !isPlaying) return;
-    const interval = setInterval(async () => {
-      if (posRaw > 5) {
-        try { await AsyncStorage.setItem(`resume_${activeTrack.id}`, String(posRaw)); } catch {}
-      }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [isPlaying, activeTrack, posRaw]);
-
   // ─── [NEW] Lyric sync — highlight current line ────────────────────────────────
   useEffect(() => {
     if (parsedLyrics.length === 0) return;
@@ -573,8 +563,9 @@ export default function App() {
     if (idx !== currentLyricIndex) {
       setCurrentLyricIndex(idx);
       // Auto-scroll to current line
-      if (idx >= 0 && lyricsScrollRef.current) {
-        lyricsScrollRef.current.scrollTo({ y: idx * 38, animated: true });
+      if (idx >= 0) {
+        try { lyricsScrollRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 }); } catch(e) {}
+        try { lyricsListRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 }); } catch(e) {}
       }
     }
   }, [posRaw, parsedLyrics]);
@@ -1197,14 +1188,7 @@ export default function App() {
     });
   };
 
-  // ─── Fetch autoplay queue ─────────────────────────────────────────────────────
-  const fetchQueue = async (songId: string, mood: string) => {
-    try {
-      const resp = await fetch(`${BACKEND_URL}/api/recommendations/queue?songId=${songId}&userId=${userId||''}&mood=${mood}`);
-      const json = await resp.json();
-      if (json.success) setAutoplayQueue(json.queue || []);
-    } catch {}
-  };
+  // fetchQueue removed — fetchRelatedSongs handles both related and queue
 
   // ─── Stream URL resolver (with audio quality) ────────────────────────────────
   const resolveStreamUrl = useCallback(async (song: any): Promise<string> => {
@@ -1217,7 +1201,7 @@ export default function App() {
     }
     const cached = urlCacheRef.current.get(song.id);
     if (cached) return cached;
-    if (song.url && typeof song.url === 'string' && song.url.includes('saavncdn')) {
+    if (song.url && typeof song.url === 'string' && song.url.startsWith('http')) {
       return song.url;
     }
 
@@ -1405,7 +1389,6 @@ export default function App() {
           return j.data.results
             .filter((s: any) => s.id !== song.id)
             .map(mapSaavn)
-            .filter((s: any) => s.url)
             .slice(0, 15);
         }
       } catch {}
@@ -1415,7 +1398,22 @@ export default function App() {
     const primaryArtist = (song.artist || '').split(',')[0].trim();
     const titleWords    = (song.title  || '').split(' ').slice(0, 3).join(' ');
 
-    // 1. Try backend
+    // 1. Try Saavn Suggestions (Best for same genre/related)
+    try {
+      const r_sugg = await fetch(`https://saavn.dev/api/songs/${song.id}/suggestions`);
+      const j_sugg = await r_sugg.json();
+      if (j_sugg.success && j_sugg.data && j_sugg.data.length > 0) {
+        const songs = j_sugg.data.map(mapSaavn);
+        if (songs.length > 0) {
+          setRelatedSongs(songs);
+          setAutoplayQueue(prev => prev.length === 0 ? songs : prev);
+          setRelatedLoading(false);
+          return;
+        }
+      }
+    } catch {}
+
+    // 2. Try backend (Fallback)
     try {
       const r = await fetch(`${BACKEND_URL}/api/recommendations/queue?songId=${song.id}&artist=${encodeURIComponent(song.artist || '')}&mood=${currentMood}`);
       const j = await r.json();
@@ -1424,21 +1422,6 @@ export default function App() {
         setAutoplayQueue(prev => prev.length === 0 ? j.queue : prev);
         setRelatedLoading(false);
         return;
-      }
-    } catch {}
-
-    // 2. Try Saavn Suggestions (Best for Related)
-    try {
-      const r_sugg = await fetch(`https://saavn.dev/api/songs/${song.id}/suggestions`);
-      const j_sugg = await r_sugg.json();
-      if (j_sugg.success && j_sugg.data && j_sugg.data.length > 0) {
-        const songs = j_sugg.data.map(mapSaavn).filter((s: any) => s.url);
-        if (songs.length > 0) {
-          setRelatedSongs(songs);
-          setAutoplayQueue(prev => prev.length === 0 ? songs : prev);
-          setRelatedLoading(false);
-          return;
-        }
       }
     } catch {}
 
@@ -1520,16 +1503,7 @@ export default function App() {
         setTimeout(async () => {
           try { await TrackPlayer.seekTo(introSeconds); } catch {}
         }, 1800);
-      } else {
-        // [NEW] Resume from last saved position
-        try {
-          const savedPos = await AsyncStorage.getItem(`resume_${track.id}`);
-          if (savedPos && parseFloat(savedPos) > 5) {
-            setTimeout(async () => {
-              try { await TrackPlayer.seekTo(parseFloat(savedPos)); } catch {}
-            }, 1500);
-          }
-        } catch {}
+
       }
 
       setIsLoading(false);
@@ -1541,7 +1515,6 @@ export default function App() {
             if (json.success) {
               const mood = json.mood || 'default';
               setCurrentMood(mood); setAutoplayReason('');
-              fetchQueue(track.id, mood);
             }
           }).catch(() => {});
         loadRecentlyPlayed();
@@ -1782,10 +1755,24 @@ export default function App() {
           // Filter out the current track so it doesn't loop repeatedly
           const filteredData = json.data.filter((s: any) => String(s.id) !== String(activeTrack.id));
           if (filteredData.length > 0) {
-            const nextSong = filteredData[0];
-            setAutoplayQueue(filteredData.slice(1));
-            await handleTrackPress(nextSong);
-            return;
+            const mappedSuggestions = filteredData.map((s: any) => {
+              const dl = s.downloadUrl || []; const im = s.image || [];
+              return {
+                id: s.id,
+                title: (s.name || '').replace(/&quot;/g, '"').replace(/&amp;/g, '&'),
+                artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '',
+                image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '',
+                url: dl.find((u:any) => u.quality === audioQuality)?.url || dl[dl.length-1]?.url || '',
+                duration: s.duration || 0
+              };
+            });
+
+            if (mappedSuggestions.length > 0) {
+              const nextSong = mappedSuggestions[0];
+              setAutoplayQueue(mappedSuggestions.slice(1));
+              await handleTrackPress(nextSong);
+              return;
+            }
           }
        }
     } catch {}
@@ -2200,18 +2187,23 @@ export default function App() {
                               onPress={async () => {
                                 setCurrentMood('default');
                                 setIsSearching(true);
-                                setSearchQuery(pl.title);
                                 try {
                                   const r = await fetch(`${BACKEND_URL}/api/playlists/${pl.id}`);
                                   const pdata = await r.json();
-                                  const songsRaw = pdata.data?.songs || [];
+                                  const playlistData = pdata.data || {};
+                                  const songsRaw = playlistData.songs || [];
                                   if (songsRaw.length > 0) {
                                     const mapped = songsRaw.map((s: any) => {
                                       const dl = s.downloadUrl || []; const im = s.image || [];
                                       return { id: s.id, title: (s.name || '').replace(/&quot;/g, '"').replace(/&amp;/g, '&'), artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality === audioQuality)?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
-                                    }).filter((s: any) => s.url);
+                                    });
                                     if (mapped.length > 0) {
-                                      setSongsList(mapped);
+                                      playlistData.songs = mapped;
+                                      playlistData.image = pl.image || playlistData.image;
+                                      playlistData.name = pl.title || playlistData.name;
+                                      playlistData.primaryArtists = pl.subtitle || playlistData.primaryArtists;
+                                      setSelectedAlbum(playlistData);
+                                      setCurrentScreen('album_view');
                                     }
                                   }
                                 } catch {}
@@ -2275,7 +2267,7 @@ export default function App() {
                               const mapped = songsRaw.map((s: any) => {
                                 const dl = s.downloadUrl || []; const im = s.image || [];
                                 return { id: s.id, title: (s.name || '').replace(/&quot;/g, '"').replace(/&amp;/g, '&'), artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality === audioQuality)?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
-                              }).filter((s: any) => s.url);
+                              });
                               if (mapped.length > 0) {
                                 setSongsList(mapped);
                                 setIsSearching(false);
@@ -2292,7 +2284,7 @@ export default function App() {
                             const mapped = j.data.results.map((s: any) => {
                               const dl = s.downloadUrl || []; const im = s.image || [];
                               return { id: s.id, title: s.name || '', artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality === audioQuality)?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
-                            }).filter((s: any) => s.url);
+                            });
                             setSongsList(mapped);
                           }
                         } catch {}
@@ -2446,7 +2438,7 @@ export default function App() {
 
             {/* Search Filters */}
             {!isLoading && !isSearching && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }} contentContainerStyle={{ paddingHorizontal: 20 }}>
                 {['All', 'Top Results', 'Songs', 'Albums', 'Movies'].map(filter => {
                   const filterKey = filter.toLowerCase().replace(' ', '_');
                   return (
@@ -2995,7 +2987,7 @@ export default function App() {
       {/* ════════════════ MINI PLAYER ════════════════ */}
       {activeTrack && (
         <View
-          style={{ position: 'absolute', bottom: Platform.OS === 'ios' ? 120 : 105, left: 16, right: 16, zIndex: 999 }}
+          style={{ position: 'absolute', bottom: Platform.OS === 'ios' ? 120 : 105, left: 36, right: 36, zIndex: 999 }}
           {...miniPlayerPan.panHandlers}
         >
           {/* Circular ring using react-native-svg for smooth rendering */}
@@ -3101,7 +3093,7 @@ export default function App() {
                   backgroundColor: moodColor,
                   justifyContent: 'center', alignItems: 'center',
                   elevation: 8,
-                  shadowColor: moodColor, shadowOpacity: 0.6, shadowRadius: 10, shadowOffset: { width: 0, height: 3 },
+                  shadowColor: moodColor, shadowOpacity: 0.6, shadowRadius: 10, shadowOffset: { width: 0, height: 10 },
                 }}>
                 {(isLoading || isBuffering)
                   ? <ActivityIndicator size="small" color="#050515" />
@@ -3362,23 +3354,39 @@ export default function App() {
                     <Text style={{ color: '#aaa', marginTop: 10, fontSize: 13 }}>Loading lyrics...</Text>
                   </View>
                 ) : (
-                  <ScrollView ref={lyricsScrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 20, paddingHorizontal: 16 }}>
-                    {parsedLyrics.length > 0 ? parsedLyrics.map((line, i) => (
-                      <TouchableOpacity key={i} onPress={() => TrackPlayer.seekTo(line.time)}>
-                        <Text style={{
-                          color: i === currentLyricIndex ? '#ffffff' : i < currentLyricIndex ? moodColor + '88' : '#aaaacc',
-                          fontSize: i === currentLyricIndex ? 17 : 14,
-                          fontWeight: i === currentLyricIndex ? '800' : '500',
-                          fontStyle: 'italic',
-                          textAlign: 'center',
-                          lineHeight: 30,
-                          marginVertical: 2,
-                        }}>{line.text}</Text>
-                      </TouchableOpacity>
-                    )) : (
-                      <Text style={{ color: '#aaa', textAlign: 'center', fontSize: 14, lineHeight: 26, fontStyle: 'italic', paddingTop: 40 }}>{lyrics || 'Tap LYRICS to load'}</Text>
+                  <>
+                    {parsedLyrics.length > 0 ? (
+                      <FlatList
+                        ref={lyricsScrollRef}
+                        data={parsedLyrics}
+                        keyExtractor={(_, i) => i.toString()}
+                        showsVerticalScrollIndicator={false}
+                        contentContainerStyle={{ paddingVertical: '40%', paddingHorizontal: 16 }}
+                        initialNumToRender={50}
+                        onScrollToIndexFailed={(info: any) => {
+                           const wait = new Promise(resolve => setTimeout(resolve, 500));
+                           wait.then(() => lyricsScrollRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0.5 }));
+                        }}
+                        renderItem={({ item: line, index: i }) => (
+                          <TouchableOpacity onPress={() => TrackPlayer.seekTo(line.time)}>
+                            <Text style={{
+                              color: i === currentLyricIndex ? '#ffffff' : i < currentLyricIndex ? moodColor + '88' : '#aaaacc',
+                              fontSize: i === currentLyricIndex ? 17 : 14,
+                              fontWeight: i === currentLyricIndex ? '800' : '500',
+                              fontStyle: 'italic',
+                              textAlign: 'center',
+                              lineHeight: 30,
+                              marginVertical: 2,
+                            }}>{line.text}</Text>
+                          </TouchableOpacity>
+                        )}
+                      />
+                    ) : (
+                      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 20, paddingHorizontal: 16 }}>
+                        <Text style={{ color: '#aaa', textAlign: 'center', fontSize: 14, lineHeight: 26, fontStyle: 'italic', paddingTop: 40 }}>{lyrics || 'Tap LYRICS to load'}</Text>
+                      </ScrollView>
                     )}
-                  </ScrollView>
+                  </>
                 )}
               </View>
             ) : (
@@ -3441,14 +3449,19 @@ export default function App() {
 
           {/* Progress bar */}
           <View style={styles.sliderSection}>
-            <View style={{ position: 'relative' }}>
-              <TouchableOpacity activeOpacity={1} style={styles.progressBarBg}
-                onPress={handleProgressBarTap}
-                onLayout={e => progressBarWidthRef.current = e.nativeEvent.layout.width}>
-                <View style={[styles.progressBarFill, { width: `${getProgressPercent()}%`, backgroundColor: moodColor }]} />
-                <View style={[styles.progressBarFill, { position: 'absolute', width: `${getProgressPercent()}%`, backgroundColor: moodColor, opacity: 0.35, height: 10, top: -2, borderRadius: 5 }]} />
-                <View style={[styles.progressDot, { left: `${getProgressPercent()}%`, shadowColor: moodColor, backgroundColor: '#fff' }]} />
-              </TouchableOpacity>
+            <View style={{ height: 30, justifyContent: 'center', marginHorizontal: -15 }}>
+              <Slider
+                style={{ width: '100%', height: 40 }}
+                minimumValue={0}
+                maximumValue={duration || 1}
+                value={position}
+                minimumTrackTintColor={moodColor}
+                maximumTrackTintColor="rgba(255,255,255,0.12)"
+                thumbTintColor="#ffffff"
+                onSlidingComplete={async (val) => {
+                  await TrackPlayer.seekTo(val);
+                }}
+              />
             </View>
             <View style={styles.timeRow}>
               <Text style={styles.timeText}>{formatTime(position)}</Text>
@@ -3749,7 +3762,7 @@ export default function App() {
                           const mapped = songsRaw.map((s: any) => {
                             const dl = s.downloadUrl || []; const im = s.image || [];
                             return { id: s.id, title: (s.name || '').replace(/&quot;/g, '"').replace(/&amp;/g, '&'), artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality === audioQuality)?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
-                          }).filter((s: any) => s.url);
+                          });
                           if (mapped.length > 0) {
                             setSongsList(mapped);
                             setIsSearching(false);
@@ -3766,7 +3779,7 @@ export default function App() {
                         const mapped = j.data.results.map((s: any) => {
                           const dl = s.downloadUrl || []; const im = s.image || [];
                           return { id: s.id, title: s.name || '', artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality === audioQuality)?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
-                        }).filter((s: any) => s.url);
+                        });
                         setSongsList(mapped);
                       }
                     } catch {}
@@ -3809,7 +3822,7 @@ export default function App() {
                           const mapped = songsRaw.map((s: any) => {
                             const dl = s.downloadUrl || []; const im = s.image || [];
                             return { id: s.id, title: (s.name || '').replace(/&quot;/g, '"').replace(/&amp;/g, '&'), artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality === audioQuality)?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
-                          }).filter((s: any) => s.url);
+                          });
                           if (mapped.length > 0) {
                             setSongsList(mapped);
                             setIsSearching(false);
@@ -3825,7 +3838,7 @@ export default function App() {
                         const mapped = j.data.results.map((s: any) => {
                           const dl = s.downloadUrl || []; const im = s.image || [];
                           return { id: s.id, title: s.name || '', artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality === audioQuality)?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
-                        }).filter((s: any) => s.url);
+                        });
                         setSongsList(mapped);
                       }
                     } catch {}
