@@ -583,8 +583,13 @@ def jiosaavn_search_all(query: str):
 
         return {'songs': songs, 'albums': albums, 'artists': artists}
     except Exception as e:
-        print(f'JioSaavn autocomplete fallback error: {e}')
+        print(f"jiosaavn_search_all error: {e}")
         return {'songs': [], 'albums': [], 'artists': []}
+
+def jiosaavn_search(query: str):
+    """Fallback search function returning only songs."""
+    return jiosaavn_search_all(query).get('songs', [])
+
 
 def youtube_search_songs(query: str, max_results: int = 15):
     """Search YouTube Music for songs — returns exact Bollywood matches with clean metadata."""
