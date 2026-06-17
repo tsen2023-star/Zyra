@@ -1408,27 +1408,27 @@ def random_song():
 # ─── Artist Routes ────────────────────────────────────────────────────────────
 
 TOP_BOLLYWOOD_ARTISTS = [
-    {'name': 'Arijit Singh',      'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0b/Arijit_Singh_at_the_IIFA_Awards_%282019%29.jpg/440px-Arijit_Singh_at_the_IIFA_Awards_%282019%29.jpg'},
-    {'name': 'Atif Aslam',        'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c9/Atif_Aslam_in_2020.jpg/440px-Atif_Aslam_in_2020.jpg'},
-    {'name': 'AR Rahman',         'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/A_R_Rahman_in_2018.jpg/440px-A_R_Rahman_in_2018.jpg'},
-    {'name': 'Sonu Nigam',        'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/Sonu_Nigam_in_2020.jpg/440px-Sonu_Nigam_in_2020.jpg'},
-    {'name': 'Shreya Ghoshal',    'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/Shreya_Ghoshal_in_2018_%28cropped%29.jpg/440px-Shreya_Ghoshal_in_2018_%28cropped%29.jpg'},
-    {'name': 'Kumar Sanu',        'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f5/Kumar_Sanu.jpg/440px-Kumar_Sanu.jpg'},
-    {'name': 'Jubin Nautiyal',    'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Jubin_Nautiyal_at_Filmfare_2020.jpg/440px-Jubin_Nautiyal_at_Filmfare_2020.jpg'},
-    {'name': 'Neha Kakkar',       'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f7/Neha_Kakkar_2019.jpg/440px-Neha_Kakkar_2019.jpg'},
-    {'name': 'Udit Narayan',      'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c2/Udit_narayan.jpg/440px-Udit_narayan.jpg'},
-    {'name': 'Lata Mangeshkar',   'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/Lata_Mangeshkar_in_2019.jpg/440px-Lata_Mangeshkar_in_2019.jpg'},
-    {'name': 'KK',                'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/69/KK_singing_at_NIT_Calicut.jpg/500px-KK_singing_at_NIT_Calicut.jpg'},
-    {'name': 'Kishore Kumar',     'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8b/Kishore_Kumar_1985.jpg/440px-Kishore_Kumar_1985.jpg'},
-    {'name': 'Asha Bhosle',       'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/Asha_Bhosle_at_the_launch_of_her_first_acting_venture_Mai.jpg/440px-Asha_Bhosle_at_the_launch_of_her_first_acting_venture_Mai.jpg'},
-    {'name': 'Badshah',           'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Badshah_at_Global_Citizen_Festival_2016.jpg/440px-Badshah_at_Global_Citizen_Festival_2016.jpg'},
-    {'name': 'Diljit Dosanjh',    'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Diljit_Dosanjh_2019.jpg/440px-Diljit_Dosanjh_2019.jpg'},
-    {'name': 'Armaan Malik',      'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8b/Armaan_Malik_in_2017.jpg/440px-Armaan_Malik_in_2017.jpg'},
-    {'name': 'Mohit Chauhan',     'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5f/Mohit_Chauhan.jpg/440px-Mohit_Chauhan.jpg'},
-    {'name': 'Vishal Dadlani',    'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e5/Vishal_Dadlani_at_Sa_Re_Ga_Ma_Pa.jpg/440px-Vishal_Dadlani_at_Sa_Re_Ga_Ma_Pa.jpg'},
-    {'name': 'Sunidhi Chauhan',   'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Sunidhi_Chauhan.jpg/440px-Sunidhi_Chauhan.jpg'},
-    {'name': 'Darshan Raval',     'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a0/Darshan_Raval_2019.jpg/440px-Darshan_Raval_2019.jpg'},
-    {'name': 'Yo Yo Honey Singh', 'image': 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a1/Honey_Singh_at_BIG_Star_Entertainment_Awards.jpg/440px-Honey_Singh_at_BIG_Star_Entertainment_Awards.jpg'},
+    {'name': 'Arijit Singh', 'image': 'https://www.jiosaavn.com/_i/3.0/artist-default-film.png'},
+    {'name': 'Atif Aslam', 'image': 'https://www.jiosaavn.com/_i/3.0/artist-default-music.png'},
+    {'name': 'AR Rahman', 'image': 'https://www.jiosaavn.com/_i/3.0/artist-default-music.png'},
+    {'name': 'Sonu Nigam', 'image': 'https://www.jiosaavn.com/_i/3.0/artist-default-music.png'},
+    {'name': 'Shreya Ghoshal', 'image': 'https://www.jiosaavn.com/_i/3.0/artist-default-music.png'},
+    {'name': 'Kumar Sanu', 'image': 'https://www.jiosaavn.com/_i/3.0/artist-default-music.png'},
+    {'name': 'Jubin Nautiyal', 'image': 'https://www.jiosaavn.com/_i/3.0/artist-default-music.png'},
+    {'name': 'Neha Kakkar', 'image': 'https://www.jiosaavn.com/_i/3.0/artist-default-music.png'},
+    {'name': 'Udit Narayan', 'image': 'https://www.jiosaavn.com/_i/3.0/artist-default-music.png'},
+    {'name': 'Lata Mangeshkar', 'image': 'https://www.jiosaavn.com/_i/3.0/artist-default-music.png'},
+    {'name': 'KK', 'image': 'https://www.jiosaavn.com/_i/3.0/artist-default-film.png'},
+    {'name': 'Kishore Kumar', 'image': 'https://www.jiosaavn.com/_i/3.0/artist-default-music.png'},
+    {'name': 'Asha Bhosle', 'image': 'https://www.jiosaavn.com/_i/3.0/artist-default-music.png'},
+    {'name': 'Badshah', 'image': 'https://www.jiosaavn.com/_i/3.0/artist-default-music.png'},
+    {'name': 'Diljit Dosanjh', 'image': 'https://www.jiosaavn.com/_i/3.0/artist-default-film.png'},
+    {'name': 'Armaan Malik', 'image': 'https://c.saavncdn.com/876/Jai-Ho-2013-500x500.jpg'},
+    {'name': 'Mohit Chauhan', 'image': 'https://c.saavncdn.com/102/Fly-With-Ur-Nani-Telugu-2018-20180531-500x500.jpg'},
+    {'name': 'Vishal Dadlani', 'image': 'https://c.saavncdn.com/547/Miss-WorldWide-Best-Of-Priyanka-Chopra-2013-500x500.jpg'},
+    {'name': 'Sunidhi Chauhan', 'image': 'https://c.saavncdn.com/547/Miss-WorldWide-Best-Of-Priyanka-Chopra-2013-500x500.jpg'},
+    {'name': 'Darshan Raval', 'image': 'https://www.jiosaavn.com/_i/3.0/artist-default-film.png'},
+    {'name': 'Yo Yo Honey Singh', 'image': 'https://www.jiosaavn.com/_i/3.0/artist-default-music.png'},
 ]
 
 
@@ -1450,27 +1450,39 @@ def artist_tracks():
     if cached is not None:
         return jsonify({'success': True, 'artist': {'name': name}, 'tracks': cached})
 
-    # ── Primary: saavn.dev artist discography ──
-    all_songs = saavn_dev_artist_songs(name, max_songs=50)
-
-    # ── Fallback: JioSaavn search queries ──
-    if len(all_songs) < 10:
-        seen_titles: set = set(seen_titles := {s['title'].lower() for s in all_songs})
-        js_queries = [
-            f'{name} best songs', f'{name} top hits',
-            f'{name} popular songs', f'{name} hits',
-        ]
-        for q in js_queries:
+    # ── Primary: JioSaavn Direct API ──
+    all_songs = []
+    seen_titles: set = set()
+    try:
+        resp = http_requests.get(
+            f'https://www.jiosaavn.com/api.php?p=1&q={urllib.parse.quote(name)}&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=50&__call=search.getResults',
+            headers=JIOSAAVN_HEADERS, timeout=8
+        )
+        data = resp.json()
+        songs_raw = data.get('results', [])
+        for song in songs_raw:
+            song_id = song.get('id', '')
+            title = clean_html(song.get('title', '') or song.get('song', '') or 'Unknown')
+            t_key = title.lower().strip()
+            if not song_id or t_key in seen_titles:
+                continue
+            
+            artist = clean_html(song.get('more_info', {}).get('singers', '') or song.get('description', '') or 'Unknown')
+            image = upgrade_image_url(song.get('image', ''))
+            
+            # Instantly decrypt URL for faster playback
+            url = None
+            enc = song.get('more_info', {}).get('encrypted_media_url', '')
+            if enc:
+                url = decrypt_jiosaavn_url(enc)
+            
+            seen_titles.add(t_key)
+            all_songs.append({'id': song_id, 'title': title, 'artist': artist, 'image': image, 'url': url, 'source': 'jiosaavn'})
+            
             if len(all_songs) >= 50:
                 break
-            for song in jiosaavn_search(q):
-                t_key = song.get('title', '').lower().strip()
-                if t_key and t_key not in seen_titles:
-                    seen_titles.add(t_key)
-                    song['artist'] = name
-                    all_songs.append(song)
-                if len(all_songs) >= 50:
-                    break
+    except Exception as e:
+        print(f"JioSaavn direct artist search error: {e}")
 
     # ── Last resort: YouTube ──
     if len(all_songs) < 5:
