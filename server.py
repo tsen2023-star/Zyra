@@ -554,12 +554,33 @@ def jiosaavn_search_all(query: str):
         # ── Parse Songs ──
         songs_raw = data.get('songs', {}).get('data', [])
         songs = []
+        song_ids = []
         for song in songs_raw[:15]:
             song_id = song.get('id', '')
+            if song_id:
+                song_ids.append(song_id)
             title   = clean_html(song.get('title', '') or song.get('song', '') or 'Unknown')
             artist  = clean_html(song.get('more_info', {}).get('singers', '') or song.get('description', '') or 'Unknown')
             image   = upgrade_image_url(song.get('image', ''))
             songs.append({'id': song_id, 'title': title, 'artist': artist, 'image': image, 'url': None, 'source': 'jiosaavn'})
+            
+        # Batch fetch details to get encrypted_media_url for instant playback
+        if song_ids:
+            try:
+                det_resp = http_requests.get(
+                    'https://www.jiosaavn.com/api.php',
+                    params={'__call': 'song.getDetails', 'cc': 'in', '_bit_rate': '320',
+                            '_format': 'json', 'pids': ','.join(song_ids), 'ctx': 'android', '_marker': '0'},
+                    headers=JIOSAAVN_HEADERS, timeout=5
+                )
+                det_data = det_resp.json()
+                for s in songs:
+                    s_data = det_data.get(s['id'], {})
+                    enc = s_data.get('encrypted_media_url', '')
+                    if enc:
+                        s['url'] = decrypt_jiosaavn_url(enc)
+            except Exception as e:
+                print(f"Batch details fetch error: {e}")
             
         # ── Parse Albums ──
         albums_raw = data.get('albums', {}).get('data', [])
