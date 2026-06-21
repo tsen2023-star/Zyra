@@ -4304,7 +4304,7 @@ const styles = StyleSheet.create({
   // Track info
   fullScreenInfo:       { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 28, marginVertical: 10 },
   fullScreenTitle:      { color: '#e6e1f5', fontSize: 21, fontWeight: 'bold', marginBottom: 4, letterSpacing: 0.2 },
-  fullScreenArtist:     { fontSize: 14, fontWeight: '600', letterSpacing: 0.5 },
+  fullScreenArtist:     { fontSize: 14, fontWeight: '600', letterSpacing: 0.5, paddingBottom: 2 },
   autoplayReasonText:   { fontSize: 11, marginTop: 4 },
 
   // Progress bar — M3 style
