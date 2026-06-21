@@ -1429,27 +1429,214 @@ def random_song():
 # ─── Artist Routes ────────────────────────────────────────────────────────────
 
 TOP_BOLLYWOOD_ARTISTS = [
-    {'name': 'Arijit Singh', 'image': 'https://c.saavncdn.com/artists/Arijit_Singh_004_20241118063717_500x500.webp'},
-    {'name': 'Atif Aslam', 'image': 'https://c.saavncdn.com/artists/Atif_Aslam_500x500.jpg'},
-    {'name': 'AR Rahman', 'image': 'https://c.saavncdn.com/artists/AR_Rahman_002_20210120084455_500x500.webp'},
-    {'name': 'Sonu Nigam', 'image': 'https://c.saavncdn.com/artists/Sonu_Nigam_500x500.webp'},
-    {'name': 'Shreya Ghoshal', 'image': 'https://c.saavncdn.com/artists/Shreya_Ghoshal_007_20241101074144_500x500.webp'},
-    {'name': 'Kumar Sanu', 'image': 'https://c.saavncdn.com/artists/Kumar_Sanu_500x500.webp'},
-    {'name': 'Jubin Nautiyal', 'image': 'https://c.saavncdn.com/artists/Jubin_Nautiyal_003_20231130204020_500x500.webp'},
-    {'name': 'Neha Kakkar', 'image': 'https://c.saavncdn.com/artists/Neha_Kakkar_007_20241212115832_500x500.webp'},
-    {'name': 'Udit Narayan', 'image': 'https://c.saavncdn.com/artists/Udit_Narayan_004_20241029065120_500x500.webp'},
-    {'name': 'Lata Mangeshkar', 'image': 'https://c.saavncdn.com/artists/Lata_Mangeshkar_004_20230623105323_500x500.webp'},
-    {'name': 'KK', 'image': 'https://c.saavncdn.com/artists/KK_500x500.webp'},
-    {'name': 'Kishore Kumar', 'image': 'https://c.saavncdn.com/artists/Kishore_Kumar_500x500.webp'},
-    {'name': 'Asha Bhosle', 'image': 'https://c.saavncdn.com/artists/Asha_Bhosle_002_20200212082318_500x500.webp'},
-    {'name': 'Badshah', 'image': 'https://c.saavncdn.com/artists/Badshah_006_20241118064015_500x500.webp'},
-    {'name': 'Diljit Dosanjh', 'image': 'https://c.saavncdn.com/artists/Diljit_Dosanjh_005_20231025073054_500x500.webp'},
-    {'name': 'Armaan Malik', 'image': 'https://c.saavncdn.com/artists/Armaan_Malik_005_20240819091627_500x500.webp'},
-    {'name': 'Mohit Chauhan', 'image': 'https://c.saavncdn.com/artists/Mohit_Chauhan_500x500.webp'},
-    {'name': 'Vishal Dadlani', 'image': 'https://c.saavncdn.com/artists/Vishal_Dadlani_500x500.webp'},
-    {'name': 'Sunidhi Chauhan', 'image': 'https://c.saavncdn.com/artists/Sunidhi_Chauhan_005_20250515061617_500x500.webp'},
-    {'name': 'Darshan Raval', 'image': 'https://c.saavncdn.com/artists/Darshan_Raval_006_20250807060352_500x500.webp'},
-    {'name': 'Yo Yo Honey Singh', 'image': 'https://c.saavncdn.com/artists/Yo_Yo_Honey_Singh_002_20221216102650_500x500.webp'},
+    {
+        "name": "Arijit Singh",
+        "image": "https://c.saavncdn.com/artists/Arijit_Singh_004_20241118063717_500x500.webp"
+    },
+    {
+        "name": "Atif Aslam",
+        "image": "https://c.saavncdn.com/artists/Atif_Aslam_500x500.jpg"
+    },
+    {
+        "name": "AR Rahman",
+        "image": "https://c.saavncdn.com/artists/AR_Rahman_002_20210120084455_500x500.webp"
+    },
+    {
+        "name": "Sonu Nigam",
+        "image": "https://c.saavncdn.com/artists/Sonu_Nigam_500x500.webp"
+    },
+    {
+        "name": "Shreya Ghoshal",
+        "image": "https://c.saavncdn.com/artists/Shreya_Ghoshal_007_20241101074144_500x500.webp"
+    },
+    {
+        "name": "Kumar Sanu",
+        "image": "https://c.saavncdn.com/artists/Kumar_Sanu_500x500.webp"
+    },
+    {
+        "name": "Jubin Nautiyal",
+        "image": "https://c.saavncdn.com/artists/Jubin_Nautiyal_003_20231130204020_500x500.webp"
+    },
+    {
+        "name": "Neha Kakkar",
+        "image": "https://c.saavncdn.com/artists/Neha_Kakkar_007_20241212115832_500x500.webp"
+    },
+    {
+        "name": "Udit Narayan",
+        "image": "https://c.saavncdn.com/artists/Udit_Narayan_004_20241029065120_500x500.webp"
+    },
+    {
+        "name": "Lata Mangeshkar",
+        "image": "https://c.saavncdn.com/artists/Lata_Mangeshkar_004_20230623105323_500x500.webp"
+    },
+    {
+        "name": "KK",
+        "image": "https://c.saavncdn.com/artists/KK_500x500.webp"
+    },
+    {
+        "name": "Kishore Kumar",
+        "image": "https://c.saavncdn.com/artists/Kishore_Kumar_500x500.webp"
+    },
+    {
+        "name": "Asha Bhosle",
+        "image": "https://c.saavncdn.com/artists/Asha_Bhosle_002_20200212082318_500x500.webp"
+    },
+    {
+        "name": "Badshah",
+        "image": "https://c.saavncdn.com/artists/Badshah_006_20241118064015_500x500.webp"
+    },
+    {
+        "name": "Diljit Dosanjh",
+        "image": "https://c.saavncdn.com/artists/Diljit_Dosanjh_005_20231025073054_500x500.webp"
+    },
+    {
+        "name": "Armaan Malik",
+        "image": "https://c.saavncdn.com/artists/Armaan_Malik_005_20240819091627_500x500.webp"
+    },
+    {
+        "name": "Mohit Chauhan",
+        "image": "https://c.saavncdn.com/artists/Mohit_Chauhan_500x500.webp"
+    },
+    {
+        "name": "Vishal Dadlani",
+        "image": "https://c.saavncdn.com/artists/Vishal_Dadlani_002_20230810141630_500x500.webp"
+    },
+    {
+        "name": "Sunidhi Chauhan",
+        "image": "https://c.saavncdn.com/artists/Sunidhi_Chauhan_005_20250515061617_500x500.webp"
+    },
+    {
+        "name": "Darshan Raval",
+        "image": "https://c.saavncdn.com/artists/Darshan_Raval_006_20250807060352_500x500.webp"
+    },
+    {
+        "name": "Yo Yo Honey Singh",
+        "image": "https://c.saavncdn.com/artists/Yo_Yo_Honey_Singh_002_20221216102650_500x500.webp"
+    },
+    {
+        "name": "B Praak",
+        "image": "https://c.saavncdn.com/artists/B_Praak_500x500.jpg"
+    },
+    {
+        "name": "Guru Randhawa",
+        "image": "https://c.saavncdn.com/artists/Guru_Randhawa_500x500.jpg"
+    },
+    {
+        "name": "Hardy Sandhu",
+        "image": "https://c.saavncdn.com/artists/Hardy_Sandhu_500x500.jpg"
+    },
+    {
+        "name": "Mika Singh",
+        "image": "https://c.saavncdn.com/artists/Mika_Singh_500x500.jpg"
+    },
+    {
+        "name": "Shaan",
+        "image": "https://c.saavncdn.com/artists/Shaan_500x500.jpg"
+    },
+    {
+        "name": "Kavita Krishnamurthy",
+        "image": "https://c.saavncdn.com/artists/Kavita_Krishnamurthy_500x500.jpg"
+    },
+    {
+        "name": "Alka Yagnik",
+        "image": "https://c.saavncdn.com/artists/Alka_Yagnik_500x500.jpg"
+    },
+    {
+        "name": "Sukhwinder Singh",
+        "image": "https://c.saavncdn.com/artists/Sukhwinder_Singh_500x500.jpg"
+    },
+    {
+        "name": "Kailash Kher",
+        "image": "https://c.saavncdn.com/artists/Kailash_Kher_500x500.jpg"
+    },
+    {
+        "name": "Shankar Mahadevan",
+        "image": "https://c.saavncdn.com/artists/Shankar_Mahadevan_500x500.jpg"
+    },
+    {
+        "name": "Amit Trivedi",
+        "image": "https://c.saavncdn.com/artists/Amit_Trivedi_500x500.jpg"
+    },
+    {
+        "name": "Palak Muchhal",
+        "image": "https://c.saavncdn.com/artists/Palak_Muchhal_500x500.jpg"
+    },
+    {
+        "name": "Neeti Mohan",
+        "image": "https://c.saavncdn.com/artists/Neeti_Mohan_500x500.jpg"
+    },
+    {
+        "name": "Monali Thakur",
+        "image": "https://c.saavncdn.com/artists/Monali_Thakur_500x500.jpg"
+    },
+    {
+        "name": "Kanika Kapoor",
+        "image": "https://c.saavncdn.com/artists/Kanika_Kapoor_500x500.jpg"
+    },
+    {
+        "name": "Amaal Mallik",
+        "image": "https://c.saavncdn.com/artists/Amaal_Mallik_500x500.jpg"
+    },
+    {
+        "name": "Rochak Kohli",
+        "image": "https://c.saavncdn.com/artists/Rochak_Kohli_500x500.jpg"
+    },
+    {
+        "name": "Tulsi Kumar",
+        "image": "https://c.saavncdn.com/artists/Tulsi_Kumar_500x500.jpg"
+    },
+    {
+        "name": "Dhvani Bhanushali",
+        "image": "https://c.saavncdn.com/artists/Dhvani_Bhanushali_500x500.jpg"
+    },
+    {
+        "name": "Javed Ali",
+        "image": "https://c.saavncdn.com/artists/Javed_Ali_500x500.jpg"
+    },
+    {
+        "name": "Papon",
+        "image": "https://c.saavncdn.com/artists/Papon_500x500.jpg"
+    },
+    {
+        "name": "Mithoon",
+        "image": "https://c.saavncdn.com/artists/Mithoon_500x500.jpg"
+    },
+    {
+        "name": "Ankit Tiwari",
+        "image": "https://c.saavncdn.com/artists/Ankit_Tiwari_500x500.jpg"
+    },
+    {
+        "name": "Sachin-Jigar",
+        "image": "https://c.saavncdn.com/artists/Sachin-Jigar_500x500.jpg"
+    },
+    {
+        "name": "Vishal-Shekhar",
+        "image": "https://c.saavncdn.com/artists/Vishal-Shekhar_500x500.jpg"
+    },
+    {
+        "name": "Meet Bros",
+        "image": "https://c.saavncdn.com/artists/Meet_Bros_500x500.jpg"
+    },
+    {
+        "name": "Tanishk Bagchi",
+        "image": "https://c.saavncdn.com/artists/Tanishk_Bagchi_500x500.jpg"
+    },
+    {
+        "name": "Kunal Ganjawala",
+        "image": "https://c.saavncdn.com/artists/Kunal_Ganjawala_500x500.jpg"
+    },
+    {
+        "name": "Adnan Sami",
+        "image": "https://c.saavncdn.com/artists/Adnan_Sami_500x500.jpg"
+    },
+    {
+        "name": "Rahat Fateh Ali Khan",
+        "image": "https://c.saavncdn.com/artists/Rahat_Fateh_Ali_Khan_500x500.jpg"
+    },
+    {
+        "name": "K. S. Chithra",
+        "image": "https://c.saavncdn.com/artists/K._S._Chithra_500x500.jpg"
+    }
 ]
 
 
