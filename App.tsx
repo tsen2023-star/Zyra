@@ -741,7 +741,7 @@ export default function App() {
     },
     {
         "name": "Vishal Dadlani",
-        "image": "https://upload.wikimedia.org/wikipedia/commons/6/6f/Vishal_Dadlani_Indian_Idol_Junior_launch_%28cropped%29.jpg"
+        "image": "https://c.saavncdn.com/artists/Vishal_Dadlani_500x500.jpg"
     },
     {
         "name": "Sunidhi Chauhan",
@@ -757,7 +757,7 @@ export default function App() {
     },
     {
         "name": "B Praak",
-        "image": "https://upload.wikimedia.org/wikipedia/commons/6/67/National_Awards_B_Praak_%28cropped%29.jpg"
+        "image": "https://c.saavncdn.com/artists/B_Praak_001_20191118112005_500x500.jpg"
     },
     {
         "name": "Guru Randhawa",
@@ -821,15 +821,15 @@ export default function App() {
     },
     {
         "name": "Rochak Kohli",
-        "image": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Rochak_Kohli.jpg"
+        "image": "https://c.saavncdn.com/artists/Rochak_Kohli_003_20231025063632_500x500.jpg"
     },
     {
         "name": "Tulsi Kumar",
-        "image": "https://upload.wikimedia.org/wikipedia/commons/1/17/Tulsi_Kumar_in_Screen_Awards_2019_%285%29_%28cropped%29.jpg"
+        "image": "https://c.saavncdn.com/artists/Tulsi_Kumar_006_20251123185308_500x500.jpg"
     },
     {
         "name": "Dhvani Bhanushali",
-        "image": "https://upload.wikimedia.org/wikipedia/commons/7/76/Dhvani_Bhanushali_snapped_in_Khar_%28cropped%29.jpg"
+        "image": "https://c.saavncdn.com/artists/Dhvani_Bhanushali_001_20241015090250_500x500.jpg"
     },
     {
         "name": "Javed Ali",
@@ -853,15 +853,15 @@ export default function App() {
     },
     {
         "name": "Vishal-Shekhar",
-        "image": "https://upload.wikimedia.org/wikipedia/commons/2/29/Vishal-Shekhar_in_2013.jpg"
+        "image": "https://c.saavncdn.com/artists/Vishal-Shekhar_20191130071357_500x500.jpg"
     },
     {
         "name": "Meet Bros",
-        "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dc/Meet_bros_award.jpg/500px-Meet_bros_award.jpg"
+        "image": "https://c.saavncdn.com/artists/Meet_Bros_20180306113844_500x500.jpg"
     },
     {
         "name": "Tanishk Bagchi",
-        "image": "https://upload.wikimedia.org/wikipedia/commons/1/19/Tanishk_Bagchi_graces_Dhvani_Bhanushali%27s_success_bash_of_Vaaste_%28cropped%29.jpg"
+        "image": "https://c.saavncdn.com/artists/Tanishk_Bagchi_003_20260106115039_500x500.jpg"
     },
     {
         "name": "Kunal Ganjawala",
@@ -877,7 +877,7 @@ export default function App() {
     },
     {
         "name": "K. S. Chithra",
-        "image": "https://c.saavncdn.com/artists/K._S._Chithra_500x500.jpg"
+        "image": "https://c.saavncdn.com/artists/K_S_Chithra_002_20190906071921_500x500.jpg"
     }
 ]);
     });
