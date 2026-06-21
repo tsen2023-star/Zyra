@@ -2612,7 +2612,7 @@ export default function App() {
                 onChangeText={(text) => {
                   setSearchQuery(text);
                   setIsSearching(true);
-                  if (text.trim().length > 0) setIsSearchFocused(false);
+                  if (text.trim().length === 0) setIsSearchFocused(true);
                 }}
                 onFocus={() => setIsSearchFocused(true)}
                 onSubmitEditing={() => {
@@ -3304,7 +3304,7 @@ export default function App() {
                 </Text>
                 <Text style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10 }}>·</Text>
                 <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 10, fontWeight: '600' }}>
-                  {duration > 0 ? `-${formatTime(duration - position)}` : '--:--'}
+                  {duration > 0 ? `-${formatTime(Math.max(0, duration - position))}` : '--:--'}
                 </Text>
               </View>
             </View>
