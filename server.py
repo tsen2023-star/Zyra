@@ -1499,7 +1499,7 @@ TOP_BOLLYWOOD_ARTISTS = [
     },
     {
         "name": "Vishal Dadlani",
-        "image": "https://c.saavncdn.com/artists/Vishal_Dadlani_002_20230810141630_500x500.webp"
+        "image": "https://upload.wikimedia.org/wikipedia/commons/6/6f/Vishal_Dadlani_Indian_Idol_Junior_launch_%28cropped%29.jpg"
     },
     {
         "name": "Sunidhi Chauhan",
@@ -1515,7 +1515,7 @@ TOP_BOLLYWOOD_ARTISTS = [
     },
     {
         "name": "B Praak",
-        "image": "https://c.saavncdn.com/artists/B_Praak_500x500.jpg"
+        "image": "https://upload.wikimedia.org/wikipedia/commons/6/67/National_Awards_B_Praak_%28cropped%29.jpg"
     },
     {
         "name": "Guru Randhawa",
@@ -1579,15 +1579,15 @@ TOP_BOLLYWOOD_ARTISTS = [
     },
     {
         "name": "Rochak Kohli",
-        "image": "https://c.saavncdn.com/artists/Rochak_Kohli_500x500.jpg"
+        "image": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Rochak_Kohli.jpg"
     },
     {
         "name": "Tulsi Kumar",
-        "image": "https://c.saavncdn.com/artists/Tulsi_Kumar_500x500.jpg"
+        "image": "https://upload.wikimedia.org/wikipedia/commons/1/17/Tulsi_Kumar_in_Screen_Awards_2019_%285%29_%28cropped%29.jpg"
     },
     {
         "name": "Dhvani Bhanushali",
-        "image": "https://c.saavncdn.com/artists/Dhvani_Bhanushali_500x500.jpg"
+        "image": "https://upload.wikimedia.org/wikipedia/commons/7/76/Dhvani_Bhanushali_snapped_in_Khar_%28cropped%29.jpg"
     },
     {
         "name": "Javed Ali",
@@ -1611,15 +1611,15 @@ TOP_BOLLYWOOD_ARTISTS = [
     },
     {
         "name": "Vishal-Shekhar",
-        "image": "https://c.saavncdn.com/artists/Vishal-Shekhar_500x500.jpg"
+        "image": "https://upload.wikimedia.org/wikipedia/commons/2/29/Vishal-Shekhar_in_2013.jpg"
     },
     {
         "name": "Meet Bros",
-        "image": "https://c.saavncdn.com/artists/Meet_Bros_500x500.jpg"
+        "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dc/Meet_bros_award.jpg/500px-Meet_bros_award.jpg"
     },
     {
         "name": "Tanishk Bagchi",
-        "image": "https://c.saavncdn.com/artists/Tanishk_Bagchi_500x500.jpg"
+        "image": "https://upload.wikimedia.org/wikipedia/commons/1/19/Tanishk_Bagchi_graces_Dhvani_Bhanushali%27s_success_bash_of_Vaaste_%28cropped%29.jpg"
     },
     {
         "name": "Kunal Ganjawala",
