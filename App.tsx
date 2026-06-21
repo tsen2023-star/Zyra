@@ -127,6 +127,23 @@ global.fetch = async (...args) => {
   return originalFetch(url, config);
 };
 
+const ArtistAvatar = ({ art, size = 80, theme, moodColor }: any) => {
+  const [error, setError] = useState(false);
+  const source = art.image && !error ? { uri: typeof art.image === 'string' ? art.image : (art.image[art.image.length - 1]?.url || art.image[0]?.url) } : null;
+
+  return (
+    <View style={{ width: size, height: size, borderRadius: size/2, overflow: 'hidden', backgroundColor: theme.surface, marginBottom: 8, borderWidth: 2, borderColor: moodColor + '88' }}>
+      {source ? (
+        <Image source={source} style={{ width: '100%', height: '100%' }} onError={() => setError(true)} />
+      ) : (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: moodColor + '44' }}>
+          <Ionicons name="person" size={size * 0.45} color={moodColor} />
+        </View>
+      )}
+    </View>
+  );
+};
+
 export default function App() {
   const [isAppReady, setIsAppReady] = useState(false);
 
@@ -252,6 +269,7 @@ export default function App() {
 
   // ── Artists ──
   const [topArtists,    setTopArtists]    = useState<any[]>([]);
+  const [showAllArtists, setShowAllArtists] = useState(false);
   const [activeArtist,  setActiveArtist]  = useState<any>(null);
   const [artistTracks,  setArtistTracks]  = useState<any[]>([]);
   const [artistLoading, setArtistLoading] = useState(false);
@@ -471,7 +489,7 @@ export default function App() {
     if (shakeSubRef.current) { shakeSubRef.current.remove(); shakeSubRef.current = null; }
     if (!shakeEnabledRef.current) return;
     
-    const SHAKE_THRESHOLD = 3.0;
+    const SHAKE_THRESHOLD = 1.7;
     Accelerometer.setUpdateInterval(60); // faster poll
     shakeSubRef.current = Accelerometer.addListener(({ x, y, z }) => {
       const now = Date.now();
@@ -500,7 +518,7 @@ export default function App() {
             } else if (count >= 2) {
               if (handleShakePrevRef.current) handleShakePrevRef.current();
             }
-          }, 600); // Wait 600ms after a pulse to resolve the gesture
+          }, 1000); // Wait 1000ms after a pulse to resolve the gesture
         }
         shakeAboveRef.current = isAbove;
       }
@@ -653,13 +671,215 @@ export default function App() {
     }).catch(() => {
       // Hardcoded fallback list
       setTopArtists([
-        { name: 'Arijit Singh', image: 'https://c.saavncdn.com/artists/Arijit_Singh_002_20230323062147_500x500.jpg' },
-        { name: 'Shreya Ghoshal', image: 'https://c.saavncdn.com/artists/Shreya_Ghoshal_002_20230623080646_500x500.jpg' },
-        { name: 'Pritam', image: 'https://c.saavncdn.com/artists/Pritam_002_20230616111151_500x500.jpg' },
-        { name: 'Atif Aslam', image: 'https://c.saavncdn.com/artists/Atif_Aslam_500x500.jpg' },
-        { name: 'Neha Kakkar', image: 'https://c.saavncdn.com/artists/Neha_Kakkar_002_20230310114002_500x500.jpg' },
-        { name: 'Armaan Malik', image: 'https://c.saavncdn.com/artists/Armaan_Malik_002_20230202111816_500x500.jpg' },
-      ]);
+    {
+        "name": "Arijit Singh",
+        "image": "https://c.saavncdn.com/artists/Arijit_Singh_004_20241118063717_500x500.webp"
+    },
+    {
+        "name": "Atif Aslam",
+        "image": "https://c.saavncdn.com/artists/Atif_Aslam_500x500.jpg"
+    },
+    {
+        "name": "AR Rahman",
+        "image": "https://c.saavncdn.com/artists/AR_Rahman_002_20210120084455_500x500.webp"
+    },
+    {
+        "name": "Sonu Nigam",
+        "image": "https://c.saavncdn.com/artists/Sonu_Nigam_500x500.webp"
+    },
+    {
+        "name": "Shreya Ghoshal",
+        "image": "https://c.saavncdn.com/artists/Shreya_Ghoshal_007_20241101074144_500x500.webp"
+    },
+    {
+        "name": "Kumar Sanu",
+        "image": "https://c.saavncdn.com/artists/Kumar_Sanu_500x500.webp"
+    },
+    {
+        "name": "Jubin Nautiyal",
+        "image": "https://c.saavncdn.com/artists/Jubin_Nautiyal_003_20231130204020_500x500.webp"
+    },
+    {
+        "name": "Neha Kakkar",
+        "image": "https://c.saavncdn.com/artists/Neha_Kakkar_007_20241212115832_500x500.webp"
+    },
+    {
+        "name": "Udit Narayan",
+        "image": "https://c.saavncdn.com/artists/Udit_Narayan_004_20241029065120_500x500.webp"
+    },
+    {
+        "name": "Lata Mangeshkar",
+        "image": "https://c.saavncdn.com/artists/Lata_Mangeshkar_004_20230623105323_500x500.webp"
+    },
+    {
+        "name": "KK",
+        "image": "https://c.saavncdn.com/artists/KK_500x500.webp"
+    },
+    {
+        "name": "Kishore Kumar",
+        "image": "https://c.saavncdn.com/artists/Kishore_Kumar_500x500.webp"
+    },
+    {
+        "name": "Asha Bhosle",
+        "image": "https://c.saavncdn.com/artists/Asha_Bhosle_002_20200212082318_500x500.webp"
+    },
+    {
+        "name": "Badshah",
+        "image": "https://c.saavncdn.com/artists/Badshah_006_20241118064015_500x500.webp"
+    },
+    {
+        "name": "Diljit Dosanjh",
+        "image": "https://c.saavncdn.com/artists/Diljit_Dosanjh_005_20231025073054_500x500.webp"
+    },
+    {
+        "name": "Armaan Malik",
+        "image": "https://c.saavncdn.com/artists/Armaan_Malik_005_20240819091627_500x500.webp"
+    },
+    {
+        "name": "Mohit Chauhan",
+        "image": "https://c.saavncdn.com/artists/Mohit_Chauhan_500x500.webp"
+    },
+    {
+        "name": "Vishal Dadlani",
+        "image": "https://upload.wikimedia.org/wikipedia/commons/6/6f/Vishal_Dadlani_Indian_Idol_Junior_launch_%28cropped%29.jpg"
+    },
+    {
+        "name": "Sunidhi Chauhan",
+        "image": "https://c.saavncdn.com/artists/Sunidhi_Chauhan_005_20250515061617_500x500.webp"
+    },
+    {
+        "name": "Darshan Raval",
+        "image": "https://c.saavncdn.com/artists/Darshan_Raval_006_20250807060352_500x500.webp"
+    },
+    {
+        "name": "Yo Yo Honey Singh",
+        "image": "https://c.saavncdn.com/artists/Yo_Yo_Honey_Singh_002_20221216102650_500x500.webp"
+    },
+    {
+        "name": "B Praak",
+        "image": "https://upload.wikimedia.org/wikipedia/commons/6/67/National_Awards_B_Praak_%28cropped%29.jpg"
+    },
+    {
+        "name": "Guru Randhawa",
+        "image": "https://c.saavncdn.com/artists/Guru_Randhawa_500x500.jpg"
+    },
+    {
+        "name": "Hardy Sandhu",
+        "image": "https://c.saavncdn.com/artists/Hardy_Sandhu_500x500.jpg"
+    },
+    {
+        "name": "Mika Singh",
+        "image": "https://c.saavncdn.com/artists/Mika_Singh_500x500.jpg"
+    },
+    {
+        "name": "Shaan",
+        "image": "https://c.saavncdn.com/artists/Shaan_500x500.jpg"
+    },
+    {
+        "name": "Kavita Krishnamurthy",
+        "image": "https://c.saavncdn.com/artists/Kavita_Krishnamurthy_500x500.jpg"
+    },
+    {
+        "name": "Alka Yagnik",
+        "image": "https://c.saavncdn.com/artists/Alka_Yagnik_500x500.jpg"
+    },
+    {
+        "name": "Sukhwinder Singh",
+        "image": "https://c.saavncdn.com/artists/Sukhwinder_Singh_500x500.jpg"
+    },
+    {
+        "name": "Kailash Kher",
+        "image": "https://c.saavncdn.com/artists/Kailash_Kher_500x500.jpg"
+    },
+    {
+        "name": "Shankar Mahadevan",
+        "image": "https://c.saavncdn.com/artists/Shankar_Mahadevan_500x500.jpg"
+    },
+    {
+        "name": "Amit Trivedi",
+        "image": "https://c.saavncdn.com/artists/Amit_Trivedi_500x500.jpg"
+    },
+    {
+        "name": "Palak Muchhal",
+        "image": "https://c.saavncdn.com/artists/Palak_Muchhal_500x500.jpg"
+    },
+    {
+        "name": "Neeti Mohan",
+        "image": "https://c.saavncdn.com/artists/Neeti_Mohan_500x500.jpg"
+    },
+    {
+        "name": "Monali Thakur",
+        "image": "https://c.saavncdn.com/artists/Monali_Thakur_500x500.jpg"
+    },
+    {
+        "name": "Kanika Kapoor",
+        "image": "https://c.saavncdn.com/artists/Kanika_Kapoor_500x500.jpg"
+    },
+    {
+        "name": "Amaal Mallik",
+        "image": "https://c.saavncdn.com/artists/Amaal_Mallik_500x500.jpg"
+    },
+    {
+        "name": "Rochak Kohli",
+        "image": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Rochak_Kohli.jpg"
+    },
+    {
+        "name": "Tulsi Kumar",
+        "image": "https://upload.wikimedia.org/wikipedia/commons/1/17/Tulsi_Kumar_in_Screen_Awards_2019_%285%29_%28cropped%29.jpg"
+    },
+    {
+        "name": "Dhvani Bhanushali",
+        "image": "https://upload.wikimedia.org/wikipedia/commons/7/76/Dhvani_Bhanushali_snapped_in_Khar_%28cropped%29.jpg"
+    },
+    {
+        "name": "Javed Ali",
+        "image": "https://c.saavncdn.com/artists/Javed_Ali_500x500.jpg"
+    },
+    {
+        "name": "Papon",
+        "image": "https://c.saavncdn.com/artists/Papon_500x500.jpg"
+    },
+    {
+        "name": "Mithoon",
+        "image": "https://c.saavncdn.com/artists/Mithoon_500x500.jpg"
+    },
+    {
+        "name": "Ankit Tiwari",
+        "image": "https://c.saavncdn.com/artists/Ankit_Tiwari_500x500.jpg"
+    },
+    {
+        "name": "Sachin-Jigar",
+        "image": "https://c.saavncdn.com/artists/Sachin-Jigar_500x500.jpg"
+    },
+    {
+        "name": "Vishal-Shekhar",
+        "image": "https://upload.wikimedia.org/wikipedia/commons/2/29/Vishal-Shekhar_in_2013.jpg"
+    },
+    {
+        "name": "Meet Bros",
+        "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dc/Meet_bros_award.jpg/500px-Meet_bros_award.jpg"
+    },
+    {
+        "name": "Tanishk Bagchi",
+        "image": "https://upload.wikimedia.org/wikipedia/commons/1/19/Tanishk_Bagchi_graces_Dhvani_Bhanushali%27s_success_bash_of_Vaaste_%28cropped%29.jpg"
+    },
+    {
+        "name": "Kunal Ganjawala",
+        "image": "https://c.saavncdn.com/artists/Kunal_Ganjawala_500x500.jpg"
+    },
+    {
+        "name": "Adnan Sami",
+        "image": "https://c.saavncdn.com/artists/Adnan_Sami_500x500.jpg"
+    },
+    {
+        "name": "Rahat Fateh Ali Khan",
+        "image": "https://c.saavncdn.com/artists/Rahat_Fateh_Ali_Khan_500x500.jpg"
+    },
+    {
+        "name": "K. S. Chithra",
+        "image": "https://c.saavncdn.com/artists/K._S._Chithra_500x500.jpg"
+    }
+]);
     });
     const trendingQueries = [
       'global+top+50',
@@ -714,7 +934,19 @@ export default function App() {
         { key: 'lofi', title: 'Lo-Fi', subtitle: 'Beats to study/relax to' },
         { key: 'devotional', title: 'Devotional', subtitle: 'Peaceful & spiritual' },
         { key: 'punjabi', title: 'Punjabi Hits', subtitle: 'Bhangra beats' },
-        { key: 'pop', title: 'Pop Sensations', subtitle: 'Top chart bangers' }
+        { key: 'pop', title: 'Pop Sensations', subtitle: 'Top chart bangers' },
+        { key: 'bollywood', title: 'Bollywood Hits', subtitle: 'Trending in B-Town' },
+        { key: 'indie', title: 'Indie Music', subtitle: 'Hidden gems' },
+        { key: '90s', title: '90s Nostalgia', subtitle: 'Golden era' },
+        { key: 'sufi', title: 'Sufi Soul', subtitle: 'Divine melodies' },
+        { key: 'ghazal', title: 'Classic Ghazals', subtitle: 'Poetry in motion' },
+        { key: 'dance', title: 'Dance Anthems', subtitle: 'Get on the floor' },
+        { key: 'sad', title: 'Heartbreak', subtitle: 'Emotional tracks' },
+        { key: 'retro', title: 'Retro Classics', subtitle: 'Old is gold' },
+        { key: 'acoustic', title: 'Acoustic & Unplugged', subtitle: 'Raw vocals' },
+        { key: 'instrumental', title: 'Instrumental Magic', subtitle: 'Pure music' },
+        { key: 'bhajan', title: 'Morning Bhajans', subtitle: 'Start your day right' },
+        { key: 'edm', title: 'Electronic Dance', subtitle: 'High energy drops' }
       ];
       const results: any[] = [];
       for (const kw of keywords) {
@@ -727,7 +959,7 @@ export default function App() {
               const img = imgs.find((i: any) => i.quality === '500x500')?.url || imgs[imgs.length - 1]?.url || '';
               return { id: p.id, title: p.title || p.name || '', subtitle: p.subtitle || p.description || '', image: img };
             }).filter((p: any) => p.image);
-            results.push({ title: kw.title, subtitle: kw.subtitle, items: playlists.sort(() => 0.5 - Math.random()).slice(0, 10) });
+            results.push({ title: kw.title, subtitle: kw.subtitle, items: playlists.sort(() => 0.5 - Math.random()).slice(0, 8) });
           }
         } catch {}
       }
@@ -2301,21 +2533,18 @@ export default function App() {
                   <View style={{ marginBottom: 28, marginTop: 10 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                       <Text style={styles.echoSectionLabel}>Top Artists</Text>
+                      {topArtists.length > 15 && (
+                        <TouchableOpacity style={{ backgroundColor: moodColor, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }} onPress={() => setShowAllArtists(true)}>
+                          <Text style={{ color: '#000', fontSize: 10, fontWeight: '800' }}>SEE ALL</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                     <Text style={{ color: theme.subtext, fontSize: 11, fontStyle: 'italic', marginBottom: 12, textTransform: 'uppercase' }}>DISCOVER TRENDING VOICES</Text>
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                      {topArtists.map((art: any, i: number) => (
+                      {topArtists.slice(0, 15).map((art: any, i: number) => (
                         <TouchableOpacity key={i} style={{ width: '31%', alignItems: 'center', marginBottom: 16 }}
                           onPress={() => fetchArtist(art)}>
-                          <View style={{ width: 80, height: 80, borderRadius: 40, overflow: 'hidden', backgroundColor: theme.surface, marginBottom: 8, borderWidth: 2, borderColor: moodColor + '88' }}>
-                            {art.image ? (
-                              <Image source={{ uri: typeof art.image === 'string' ? art.image : (art.image[art.image.length - 1]?.url || art.image[0]?.url) }} style={{ width: '100%', height: '100%' }} />
-                            ) : (
-                              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: moodColor + '44' }}>
-                                <Ionicons name="person" size={36} color={moodColor} />
-                              </View>
-                            )}
-                          </View>
+                          <ArtistAvatar art={art} size={80} theme={theme} moodColor={moodColor} />
                           <Text numberOfLines={1} style={{ color: '#fff', fontSize: 12, fontWeight: 'bold', textAlign: 'center' }}>{art.name || art.title}</Text>
                         </TouchableOpacity>
                       ))}
@@ -3459,7 +3688,7 @@ export default function App() {
                 maximumTrackTintColor="rgba(255,255,255,0.12)"
                 thumbTintColor="#ffffff"
                 onSlidingComplete={async (val) => {
-                  await TrackPlayer.seekTo(val);
+                  await TrackPlayer.seekTo(Math.min(val, (duration || 1) - 2));
                 }}
               />
             </View>
@@ -3845,6 +4074,35 @@ export default function App() {
                     finally { setIsSearching(false); }
                   }}>
                   <Text style={{ color: '#fff', fontSize: 15, fontStyle: 'italic', fontWeight: '600' }}>{genre}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* ALL ARTISTS MODAL */}
+      <Modal animationType="slide" transparent={false} visible={showAllArtists} onRequestClose={() => setShowAllArtists(false)}>
+        <View style={{ flex: 1, backgroundColor: isAmoled ? '#000' : '#07071a' }}>
+          <StatusBar barStyle="light-content" backgroundColor={isAmoled ? '#000' : '#07071a'} />
+          {/* Header */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 54, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#ffffff11' }}>
+            <TouchableOpacity onPress={() => setShowAllArtists(false)} style={{ marginRight: 16 }}>
+              <Ionicons name="arrow-back" size={24} color="#fff" />
+            </TouchableOpacity>
+            <Text style={{ color: '#fff', fontSize: 20, fontWeight: '800', letterSpacing: 0.5 }}>All Artists</Text>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40, paddingTop: 24 }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {topArtists.map((art: any, i: number) => (
+                <TouchableOpacity key={i} style={{ width: '31%', alignItems: 'center', marginBottom: 20 }}
+                  onPress={() => {
+                    setShowAllArtists(false);
+                    fetchArtist(art);
+                  }}>
+                  <ArtistAvatar art={art} size={100} theme={theme} moodColor={moodColor} />
+                  <Text numberOfLines={1} style={{ color: '#fff', fontSize: 13, fontWeight: 'bold', textAlign: 'center' }}>{art.name || art.title}</Text>
                 </TouchableOpacity>
               ))}
             </View>
