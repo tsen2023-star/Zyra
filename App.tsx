@@ -134,7 +134,7 @@ const ArtistAvatar = ({ art, size = 80, theme, moodColor }: any) => {
   return (
     <View style={{ width: size, height: size, borderRadius: size/2, overflow: 'hidden', backgroundColor: theme.surface, marginBottom: 8, borderWidth: 2, borderColor: moodColor + '88' }}>
       {source ? (
-        <Image source={source} style={{ width: '100%', height: '100%' }} onError={() => setError(true)} />
+        <Image source={{ uri: source.uri, headers: { 'User-Agent': 'ZyraApp/1.0' } }} style={{ width: '100%', height: '100%' }} onError={() => setError(true)} />
       ) : (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: moodColor + '44' }}>
           <Ionicons name="person" size={size * 0.45} color={moodColor} />
@@ -1045,7 +1045,9 @@ export default function App() {
   const fetchSuggestions = async (query: string) => {
     if (!query.trim()) { setSearchSuggestions([]); return; }
     try {
-      const resp = await fetch(`https://www.jiosaavn.com/api.php?__call=autocomplete.get&query=${encodeURIComponent(query)}&_format=json&_marker=0&ctx=android`);
+      const resp = await fetch(`https://www.jiosaavn.com/api.php?__call=autocomplete.get&query=${encodeURIComponent(query)}&_format=json&_marker=0&ctx=android`, {
+        headers: { 'User-Agent': 'ZyraApp/1.0' }
+      });
       const json = await resp.json();
       const suggestions: string[] = [];
       ['topquery', 'songs', 'albums', 'artists'].forEach(k => {
@@ -3310,7 +3312,7 @@ export default function App() {
             </View>
 
             {/* Playback controls */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0,  }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexShrink: 0, paddingRight: 4 }}>
               <TouchableOpacity onPress={playPrevious} hitSlop={{ top:14, bottom:14, left:8, right:8 }}>
                 <Ionicons name="play-skip-back" size={20} color="rgba(255,255,255,0.80)" />
               </TouchableOpacity>
@@ -3319,6 +3321,7 @@ export default function App() {
                 onPress={togglePlayPause}
                 style={{
                   width: 48, height: 48, borderRadius: 24,
+                  flexShrink: 0,
                   backgroundColor: moodColor,
                   justifyContent: 'center', alignItems: 'center',
                   elevation: 8,
@@ -3326,7 +3329,7 @@ export default function App() {
                 }}>
                 {(isLoading || isBuffering)
                   ? <ActivityIndicator size="small" color="#050515" />
-                  : <Ionicons name={isPlaying ? 'pause' : 'play'} size={24} color="#050515" />}
+                  : <Ionicons name={isPlaying ? 'pause' : 'play'} size={24} color="#050515" style={{ marginLeft: isPlaying ? 0 : 2 }} />}
               </TouchableOpacity>
 
               <TouchableOpacity onPress={playNext} hitSlop={{ top:14, bottom:14, left:8, right:8 }}>
@@ -4231,7 +4234,7 @@ const styles = StyleSheet.create({
   input:       { flex: 1, color: '#e6e1f5', fontSize: 15 },
 
   // History
-  historyDropdown: { backgroundColor: '#16161f', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', marginBottom: 12, overflow: 'hidden' },
+  historyDropdown: { backgroundColor: '#16161f', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', marginBottom: 12, overflow: 'hidden', zIndex: 100, position: 'relative' },
   historyHeader:   { color: '#9896a8', fontSize: 11, fontWeight: '700', letterSpacing: 1, padding: 14, paddingBottom: 8, textTransform: 'uppercase' },
   historyItem:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 11, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' },
   historyItemText: { color: '#ccc', fontSize: 14, flex: 1 },
