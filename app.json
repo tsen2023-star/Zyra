@@ -2,7 +2,7 @@
   "expo": {
     "name": "Zyra",
     "slug": "zyra-music",
-    "version": "1.0.12",
+    "version": "1.0.13",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -23,7 +23,7 @@
         "backgroundColor": "#12121c"
       },
       "package": "com.babulu2006.zyramusic",
-      "versionCode": 12,
+      "versionCode": 13,
       "permissions": [
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
@@ -32,11 +32,11 @@
     "plugins": [
       "./rntp.plugin.js"
     ],
-    "owner": "bbablu206",
     "extra": {
       "eas": {
-        "projectId": "2f4ae3ba-e995-4adf-91d3-1961bdb86e72"
+        "projectId": "b466d1e8-cc13-4b6f-9ced-1589b4e9dd63"
       }
-    }
+    },
+    "owner": "zyra06"
   }
 }
