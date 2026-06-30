@@ -664,7 +664,23 @@ export default function App() {
     };
     fetch(`${BACKEND_URL}/api/artists/top`).then(r => r.json()).then(j => { 
       if (j.success && j.artists?.length > 0) {
-        setTopArtists(j.artists);
+        // Intercept and replace wikimedia images since they are 404
+        const fallbackList: any[] = [
+          { name: "Vishal Dadlani", image: "https://c.saavncdn.com/artists/Vishal_Dadlani_500x500.jpg" },
+          { name: "B Praak", image: "https://c.saavncdn.com/artists/B_Praak_001_20191118112005_500x500.jpg" },
+          { name: "Rochak Kohli", image: "https://c.saavncdn.com/artists/Rochak_Kohli_003_20231025063632_500x500.jpg" },
+          { name: "Tulsi Kumar", image: "https://c.saavncdn.com/artists/Tulsi_Kumar_006_20251123185308_500x500.jpg" },
+          { name: "Dhvani Bhanushali", image: "https://c.saavncdn.com/artists/Dhvani_Bhanushali_001_20241015090250_500x500.jpg" },
+          { name: "Vishal-Shekhar", image: "https://c.saavncdn.com/artists/Vishal-Shekhar_20191130071357_500x500.jpg" },
+          { name: "Meet Bros", image: "https://c.saavncdn.com/artists/Meet_Bros_20180306113844_500x500.jpg" },
+          { name: "Tanishk Bagchi", image: "https://c.saavncdn.com/artists/Tanishk_Bagchi_003_20260106115039_500x500.jpg" },
+          { name: "K. S. Chithra", image: "https://c.saavncdn.com/artists/K_S_Chithra_002_20190906071921_500x500.jpg" }
+        ];
+        const fixedArtists = j.artists.map((art: any) => {
+          const fallback = fallbackList.find(f => f.name.toLowerCase() === art.name.toLowerCase());
+          return fallback ? { ...art, image: fallback.image } : art;
+        });
+        setTopArtists(fixedArtists);
       } else {
         throw new Error('Fallback');
       }
@@ -1772,7 +1788,7 @@ export default function App() {
   };
 
   const formatTime = (millis: number) => {
-    if (!millis || isNaN(millis)) return '0:00';
+    if (!millis || isNaN(millis) || millis < 0) return '0:00';
     const m = Math.floor(millis / 60000), s = Math.floor((millis % 60000) / 1000);
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
@@ -3691,7 +3707,7 @@ export default function App() {
                 maximumTrackTintColor="rgba(255,255,255,0.12)"
                 thumbTintColor="#ffffff"
                 onSlidingComplete={async (val) => {
-                  await TrackPlayer.seekTo(Math.min(val, (duration || 1) - 2));
+                  await TrackPlayer.seekTo(Math.min(val / 1000, ((duration || 1) / 1000) - 2));
                 }}
               />
             </View>
