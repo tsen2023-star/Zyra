@@ -1085,12 +1085,15 @@ export default function App() {
       const json = await resp.json();
       const suggestions: string[] = [];
       ['topQuery', 'songs', 'albums', 'artists'].forEach(k => {
-        const items = json.data?.[k]?.results || [];
-        items.forEach((item: any) => {
-          let title = item.title || item.name || '';
-          title = title.replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
-          if (title && !suggestions.includes(title)) suggestions.push(title);
-        });
+        // Support both old saavn.dev structure and new backend structure
+        const items = (json.data?.[k]?.results || json.data?.[k] || []);
+        if (Array.isArray(items)) {
+          items.forEach((item: any) => {
+            let title = item.title || item.name || '';
+            title = title.replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+            if (title && !suggestions.includes(title)) suggestions.push(title);
+          });
+        }
       });
       setSearchSuggestions(suggestions.slice(0, 10));
     } catch {
@@ -2639,6 +2642,7 @@ export default function App() {
                       setSearchHistory(prev => [searchQuery.trim(), ...prev].slice(0, 10));
                     }
                   }
+                  setIsSearchFocused(false);
                 }}
               />
               {searchQuery.length > 0 && (
