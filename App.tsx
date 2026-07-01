@@ -4254,7 +4254,7 @@ const styles = StyleSheet.create({
   input:       { flex: 1, color: '#e6e1f5', fontSize: 15 },
 
   // History
-  historyDropdown: { backgroundColor: '#16161f', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', marginBottom: 12, overflow: 'hidden', zIndex: 100, position: 'relative' },
+  historyDropdown: { backgroundColor: '#16161f', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', marginBottom: 12, overflow: 'hidden', zIndex: 100, position: 'absolute', top: 60, left: 16, right: 16, elevation: 5, shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 10, shadowOffset: { width: 0, height: 5 } },
   historyHeader:   { color: '#9896a8', fontSize: 11, fontWeight: '700', letterSpacing: 1, padding: 14, paddingBottom: 8, textTransform: 'uppercase' },
   historyItem:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 11, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' },
   historyItemText: { color: '#ccc', fontSize: 14, flex: 1 },
