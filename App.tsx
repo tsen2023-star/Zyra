@@ -964,8 +964,9 @@ export default function App() {
         { key: 'bhajan', title: 'Morning Bhajans', subtitle: 'Start your day right' },
         { key: 'edm', title: 'Electronic Dance', subtitle: 'High energy drops' }
       ];
-      const results: any[] = [];
-      for (const kw of keywords) {
+      setFeaturedPlaylists([]); // Clear first
+      
+      const fetchSection = async (kw: any, index: number) => {
         try {
           const r = await fetch(`${BACKEND_URL}/api/playlists/search?query=${kw.key}&limit=20`);
           const j = await r.json();
@@ -975,11 +976,19 @@ export default function App() {
               const img = imgs.find((i: any) => i.quality === '500x500')?.url || imgs[imgs.length - 1]?.url || '';
               return { id: p.id, title: p.title || p.name || '', subtitle: p.subtitle || p.description || '', image: img };
             }).filter((p: any) => p.image);
-            results.push({ title: kw.title, subtitle: kw.subtitle, items: playlists.sort(() => 0.5 - Math.random()).slice(0, 8) });
+            if (playlists.length > 0) {
+              const section = { title: kw.title, subtitle: kw.subtitle, items: playlists.sort(() => 0.5 - Math.random()).slice(0, 8), index };
+              setFeaturedPlaylists(prev => {
+                const newArr = [...prev, section];
+                return newArr.sort((a, b) => a.index - b.index);
+              });
+            }
           }
         } catch {}
-      }
-      setFeaturedPlaylists(results);
+      };
+
+      // Fetch all in parallel
+      await Promise.allSettled(keywords.map((kw, i) => fetchSection(kw, i)));
     } catch (e) { console.error('Featured playlists error', e); }
   }, []);
 
@@ -1334,27 +1343,7 @@ export default function App() {
   // ─── Search ──────────────────────────────────────────────────────────────────
   // ─── Search: movies/albums from saavn.dev ─────────────────────────────────
   const fetchMovieResults = async (query: string) => {
-    try {
-      const ctrl1 = new AbortController(); const t1 = setTimeout(() => ctrl1.abort(), 8000);
-      const r = await fetch(`https://saavn.dev/api/search/albums?query=${encodeURIComponent(query)}&limit=15`, { signal: ctrl1.signal });
-      clearTimeout(t1);
-      const j = await r.json();
-      if (j.success && j.data?.results?.length > 0) {
-        const albums = j.data.results.map((a: any) => {
-          const imgs: any[] = a.image || [];
-          const image = imgs.find((i: any) => i.quality === '500x500')?.url || imgs[imgs.length - 1]?.url || '';
-          return { id: a.id, name: a.name || a.title || '', description: a.description || a.year || 'Album', image: image, year: a.year || '', songCount: a.songCount || 0, artists: a.description || a.year || '' };
-        });
-        setAlbumResults(albums);
-        setMovieResults(albums);
-        
-        // Auto-expand if the movie name exactly matches the search query
-        const exactMatch = albums.find((m: any) => m.name.toLowerCase() === query.toLowerCase().trim());
-        if (exactMatch) {
-          openMovie(exactMatch);
-        }
-      } else { setAlbumResults([]); setMovieResults([]); }
-    } catch { setAlbumResults([]); setMovieResults([]); }
+    // Merged into fetchLiveTracks
   };
 
   // Open a movie — fetch all its songs from saavn.dev albums endpoint
@@ -1377,50 +1366,63 @@ export default function App() {
   const fetchLiveTracks = async (query: string) => {
     try {
       setIsSearching(true);
-      const resp = await fetch(
-        `https://saavn.dev/api/search/songs?query=${encodeURIComponent(query)}&limit=20`,
-        { signal: (() => { const c = new AbortController(); setTimeout(() => c.abort(), 10000); return c.signal; })() }
-      );
-      const json = await resp.json();
-      if (json.success && json.data?.results?.length > 0) {
-        const results = json.data.results.map((s: any) => {
-          const dlUrls: any[] = s.downloadUrl || [];
-          // [NEW] respect selected audio quality
-          const audioUrl = dlUrls.find((u: any) => u.quality === audioQuality)?.url
-                        || dlUrls.find((u: any) => u.quality === audioQuality)?.url
-                        || dlUrls.find((u: any) => u.quality === '160kbps')?.url
-                        || dlUrls[dlUrls.length - 1]?.url || '';
-          const imgs: any[] = s.image || [];
-          const image = imgs.find((i: any) => i.quality === '500x500')?.url
-                     || imgs.find((i: any) => i.quality === '150x150')?.url
-                     || imgs[imgs.length - 1]?.url || '';
-          const artist = s.artists?.primary?.map((a: any) => a.name).join(', ')
-                      || s.primaryArtists || '';
-          if (audioUrl && s.id) urlCacheRef.current.set(s.id, audioUrl);
-          return { id: s.id, title: s.name || '', artist, image, url: audioUrl, duration: s.duration || 0 };
+      // 1. Fetch Songs
+      const songResp = await fetch(`https://www.jiosaavn.com/api.php?__call=search.getResults&q=${encodeURIComponent(query)}&n=40&p=1&_format=json&_marker=0&ctx=android`, {
+        headers: { 'User-Agent': 'ZyraApp/1.0' }
+      });
+      const songData = await songResp.json();
+      const sRaw = songData.results || [];
+      const songsList = [];
+      const seen = new Set();
+      for (const s of sRaw) {
+        if (!s.id) continue;
+        const title = (s.title || s.song || '').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+        const tKey = title.toLowerCase().trim();
+        if (seen.has(tKey)) continue;
+        seen.add(tKey);
+        const artist = (s.more_info?.singers || s.description || '').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+        const image = (s.image || '').replace(/150x150|50x50/g, '500x500');
+        songsList.push({ id: s.id, title, artist, image, source: 'jiosaavn' });
+      }
+      setSongsList(songsList);
+
+      // 2. Fetch Albums and Artists (using autocomplete)
+      const autoResp = await fetch(`https://www.jiosaavn.com/api.php?__call=autocomplete.get&query=${encodeURIComponent(query)}&_format=json&_marker=0&ctx=android`, {
+        headers: { 'User-Agent': 'ZyraApp/1.0' }
+      });
+      const autoData = await autoResp.json();
+      
+      const aRaw = autoData.albums?.data || [];
+      const albumsList = [];
+      for (const a of aRaw) {
+        if (!a.id) continue;
+        albumsList.push({
+          id: a.id,
+          name: (a.title || '').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&'),
+          artist: (a.music || a.description || '').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&'),
+          image: (a.image || '').replace(/150x150|50x50/g, '500x500')
         });
-        setSongsList(results);
-        // Do not clear albumResults here; fetchMovieResults will populate them.
-        // Fire movie search in parallel — don't block song results
-        fetchMovieResults(query);
-        return;
       }
+      setAlbumResults(albumsList);
+      setMovieResults(albumsList.map((a: any) => ({ ...a, description: a.artist })));
+
+      const artRaw = autoData.artists?.data || [];
+      const artistList = [];
+      for (const a of artRaw) {
+        if (!a.id) continue;
+        artistList.push({
+          id: a.id,
+          name: (a.title || '').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&'),
+          image: (a.image || '').replace(/150x150|50x50/g, '500x500')
+        });
+      }
+      setArtistResults(artistList);
     } catch (e) {
-      console.warn('saavn.dev search failed, falling back to backend:', e);
+      console.warn('Search failed:', e);
+      setSongsList([]); setAlbumResults([]); setMovieResults([]); setArtistResults([]);
+    } finally {
+      setIsSearching(false);
     }
-    try {
-      const resp = await fetch(`${BACKEND_URL}/api/search?query=${encodeURIComponent(query)}`);
-      const json = await resp.json();
-      if (json.success) { 
-        setSongsList(json.data.songs || json.data.results || []); 
-        setAlbumResults(json.data.albums || []); 
-        // Populate movieResults with the same albums to prevent empty sections if the user filters by 'movies', but avoid duplicate network calls.
-        const movies = (json.data.albums || []).map((a: any) => ({ id: a.id, name: a.name || '', description: a.artist || '', image: a.image, year: '', songCount: 0, artists: a.artist || '' }));
-        setMovieResults(movies);
-      }
-      else { setSongsList([]); setAlbumResults([]); setMovieResults([]); }
-    } catch { setSongsList([]); setAlbumResults([]); setMovieResults([]); }
-    finally { setIsSearching(false); }
   };
 
   const saveSearchHistory = async (query: string) => {
@@ -1533,9 +1535,33 @@ export default function App() {
     setIsArtistMode(true); artistPlayedRef.current = new Set();
     setCurrentScreen('artist_profile');
     try {
-      const resp = await fetch(`${BACKEND_URL}/api/artist?name=${encodeURIComponent(artist.name)}`);
-      const json = await resp.json();
-      if (json.success) setArtistTracks(json.tracks || []);
+      const resp = await fetch(`https://www.jiosaavn.com/api.php?__call=search.getResults&q=${encodeURIComponent(artist.name)}&n=50&p=1&_format=json&_marker=0&ctx=android`, {
+        headers: { 'User-Agent': 'ZyraApp/1.0' }
+      });
+      const data = await resp.json();
+      const songsRaw = data.results || [];
+      const tracks = [];
+      const seen = new Set();
+      for (const s of songsRaw) {
+         if (!s.id) continue;
+         const title = (s.title || s.song || '').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+         const tKey = title.toLowerCase().trim();
+         if (seen.has(tKey)) continue;
+         seen.add(tKey);
+         
+         const art = (s.more_info?.singers || s.description || 'Unknown').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+         const image = (s.image || '').replace(/150x150|50x50/g, '500x500');
+         
+         tracks.push({ id: s.id, title, artist: art, image, source: 'jiosaavn' });
+         if (tracks.length >= 35) break;
+      }
+      if (tracks.length > 0) {
+        setArtistTracks(tracks);
+      } else {
+        const bResp = await fetch(`${BACKEND_URL}/api/artist?name=${encodeURIComponent(artist.name)}`);
+        const bJson = await bResp.json();
+        if (bJson.success) setArtistTracks(bJson.tracks || []);
+      }
     } catch (e) { console.error('fetchArtist error', e); }
     finally { setArtistLoading(false); }
   };
