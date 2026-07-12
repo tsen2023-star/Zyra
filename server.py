@@ -34,7 +34,7 @@ JWT_EXPIRY_DAYS = 30
 # ─── PostgreSQL ───────────────────────────────────────────────────────────────
 
 def get_db():
-    return psycopg2.connect(DATABASE_URL, sslmode='require', connect_timeout=15)
+    return psycopg2.connect(DATABASE_URL, sslmode='prefer', connect_timeout=15)
 
 def _row_to_dict(description, row):
     if row is None or description is None:
