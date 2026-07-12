@@ -47,7 +47,7 @@ def get_db():
         password=parsed.password,
         port=parsed.port or 5432,
         ssl_context=ssl_ctx,
-        timeout=30
+        timeout=15
     )
 
 def _row_to_dict(description, row):
