@@ -31,10 +31,20 @@ DATABASE_URL    = os.environ.get('DATABASE_URL', '')
 JWT_SECRET      = os.environ.get('JWT_SECRET', 'zyra-super-secret-2025')
 JWT_EXPIRY_DAYS = 30
 
+# If running on Render, forcefully use the internal database URL and disable SSL
+# to prevent the external proxy from dropping the SSL connection unexpectedly.
+if os.environ.get('RENDER') == 'true' and '.render.com' in DATABASE_URL:
+    import re
+    DATABASE_URL = re.sub(r'([a-zA-Z0-9-]+)\.[a-zA-Z0-9-]+\.render\.com', r'\1', DATABASE_URL)
+    DB_SSL_MODE = 'disable'
+else:
+    # If running locally, we must use the external URL and require SSL
+    DB_SSL_MODE = 'require'
+
 # ─── PostgreSQL ───────────────────────────────────────────────────────────────
 
 def get_db():
-    return psycopg2.connect(DATABASE_URL, sslmode='prefer', connect_timeout=15)
+    return psycopg2.connect(DATABASE_URL, sslmode=DB_SSL_MODE, connect_timeout=15)
 
 def _row_to_dict(description, row):
     if row is None or description is None:
