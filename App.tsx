@@ -134,7 +134,7 @@ const ArtistAvatar = ({ art, size = 80, theme, moodColor }: any) => {
   return (
     <View style={{ width: size, height: size, borderRadius: size/2, overflow: 'hidden', backgroundColor: theme.surface, marginBottom: 8, borderWidth: 2, borderColor: moodColor + '88' }}>
       {source ? (
-        <Image source={{ uri: source.uri, headers: { 'User-Agent': 'ZyraApp/1.0' } }} style={{ width: '100%', height: '100%' }} onError={() => setError(true)} />
+        <Image source={{ uri: source.uri, headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } }} style={{ width: '100%', height: '100%' }} onError={() => setError(true)} />
       ) : (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: moodColor + '44' }}>
           <Ionicons name="person" size={size * 0.45} color={moodColor} />
@@ -1071,7 +1071,7 @@ export default function App() {
     if (!query.trim()) { setSearchSuggestions([]); return; }
     try {
       const resp = await fetch(`https://www.jiosaavn.com/api.php?__call=autocomplete.get&query=${encodeURIComponent(query)}&_format=json&_marker=0&ctx=android`, {
-        headers: { 'User-Agent': 'ZyraApp/1.0' }
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
       });
       const json = await resp.json();
       const suggestions: string[] = [];
@@ -1368,7 +1368,7 @@ export default function App() {
       setIsSearching(true);
       // 1. Fetch Songs
       const songResp = await fetch(`https://www.jiosaavn.com/api.php?__call=search.getResults&q=${encodeURIComponent(query)}&n=40&p=1&_format=json&_marker=0&ctx=android`, {
-        headers: { 'User-Agent': 'ZyraApp/1.0' }
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
       });
       const songData = await songResp.json();
       const sRaw = songData.results || [];
@@ -1388,7 +1388,7 @@ export default function App() {
 
       // 2. Fetch Albums and Artists (using autocomplete)
       const autoResp = await fetch(`https://www.jiosaavn.com/api.php?__call=autocomplete.get&query=${encodeURIComponent(query)}&_format=json&_marker=0&ctx=android`, {
-        headers: { 'User-Agent': 'ZyraApp/1.0' }
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
       });
       const autoData = await autoResp.json();
       
@@ -1449,20 +1449,49 @@ export default function App() {
   const resolveStreamUrl = useCallback(async (song: any): Promise<string> => {
     const dl = downloads.find((d: any) => d.id === song.id);
     if (dl?.localUri) return dl.localUri;
+    
+    // Always favor backend stream for YouTube tracks
     if (song.id?.startsWith('yt_')) {
       const te = encodeURIComponent(song.title  || '');
       const ae = encodeURIComponent(song.artist || '');
       return `${BACKEND_URL}/api/stream?id=${song.id}&title=${te}&artist=${ae}`;
     }
+
     const cached = urlCacheRef.current.get(song.id);
     if (cached) return cached;
     if (song.url && typeof song.url === 'string' && song.url.startsWith('http')) {
       return song.url;
     }
 
+    // ─── Direct JioSaavn resolution on device to bypass backend blocks ───
+    try {
+      const jioResp = await fetch(`https://www.jiosaavn.com/api.php?__call=song.getDetails&cc=in&_bit_rate=320&_format=json&pids=${song.id}&ctx=android&_marker=0`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      });
+      const jioData = await jioResp.json();
+      const songData = jioData[song.id] || {};
+      const preview = songData.media_preview_url || '';
+      if (preview) {
+        let qualityExt = '_320.mp4';
+        if (audioQuality === '160kbps') qualityExt = '_160.mp4';
+        if (audioQuality === '96kbps') qualityExt = '_96.mp4';
+        const directUrl = preview.replace('preview.saavncdn.com', 'aac.saavncdn.com').replace('_96_p.mp4', qualityExt);
+        urlCacheRef.current.set(song.id, directUrl);
+        return directUrl;
+      }
+      
+      const mediaUrl = songData.media_url || '';
+      if (mediaUrl) {
+        urlCacheRef.current.set(song.id, mediaUrl);
+        return mediaUrl;
+      }
+    } catch (e) {
+      console.warn('Direct JioSaavn resolution failed, falling back to backend:', e);
+    }
+
+    // ─── Fallback to backend ───
     const te = encodeURIComponent(song.title  || '');
     const ae = encodeURIComponent(song.artist || '');
-    // Resolve direct streaming URL to reduce TrackPlayer latency
     try {
       const res = await fetch(`${BACKEND_URL}/api/stream?id=${song.id}&title=${te}&artist=${ae}&json=true`);
       const data = await res.json();
@@ -1536,7 +1565,7 @@ export default function App() {
     setCurrentScreen('artist_profile');
     try {
       const resp = await fetch(`https://www.jiosaavn.com/api.php?__call=search.getResults&q=${encodeURIComponent(artist.name)}&n=50&p=1&_format=json&_marker=0&ctx=android`, {
-        headers: { 'User-Agent': 'ZyraApp/1.0' }
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
       });
       const data = await resp.json();
       const songsRaw = data.results || [];
