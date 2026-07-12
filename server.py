@@ -12,8 +12,7 @@ import requests as http_requests
 import random, time, os, re, html, jwt, hashlib, uuid
 from base64 import b64decode
 from datetime import datetime, timedelta
-import pg8000.dbapi
-from urllib.parse import urlparse
+import psycopg2
 from recommender import (
     detect_mood, get_query_for_mood, get_time_of_day_mood,
     build_recommendation_reason, MOOD_LABELS
@@ -35,20 +34,7 @@ JWT_EXPIRY_DAYS = 30
 # ─── PostgreSQL ───────────────────────────────────────────────────────────────
 
 def get_db():
-    import ssl
-    parsed  = urlparse(DATABASE_URL)
-    ssl_ctx = ssl.create_default_context()
-    ssl_ctx.check_hostname = False
-    ssl_ctx.verify_mode    = ssl.CERT_NONE
-    return pg8000.dbapi.connect(
-        host=parsed.hostname,
-        database=parsed.path.lstrip('/'),
-        user=parsed.username,
-        password=parsed.password,
-        port=parsed.port or 5432,
-        ssl_context=ssl_ctx,
-        timeout=15
-    )
+    return psycopg2.connect(DATABASE_URL, sslmode='require', connect_timeout=15)
 
 def _row_to_dict(description, row):
     if row is None or description is None:

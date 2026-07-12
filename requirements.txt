@@ -3,6 +3,6 @@ flask-cors==4.0.0
 requests==2.31.0
 pycryptodome==3.20.0
 gunicorn==21.2.0
-pg8000==1.31.1
+psycopg2-binary==2.9.9
 PyJWT==2.8.0
 yt-dlp==2024.4.9
