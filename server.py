@@ -883,7 +883,8 @@ def login():
         return jsonify({'success': True, 'token': token, 'userId': user['id'], 'username': user.get('username', '')})
     except Exception as e:
         print(f'Login error: {e}')
-        return jsonify({'success': False, 'error': str(e)}), 500
+        import traceback
+        return jsonify({'success': False, 'error': f"{repr(e)} | {traceback.format_exc()}"}), 500
 
 
 # ─── Forgot Password / OTP ────────────────────────────────────────────────────
