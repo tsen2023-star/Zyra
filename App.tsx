@@ -1564,32 +1564,10 @@ export default function App() {
     setIsArtistMode(true); artistPlayedRef.current = new Set();
     setCurrentScreen('artist_profile');
     try {
-      const resp = await fetch(`https://www.jiosaavn.com/api.php?__call=search.getResults&q=${encodeURIComponent(artist.name)}&n=50&p=1&_format=json&_marker=0&ctx=android`, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-      });
-      const data = await resp.json();
-      const songsRaw = data.results || [];
-      const tracks = [];
-      const seen = new Set();
-      for (const s of songsRaw) {
-         if (!s.id) continue;
-         const title = (s.title || s.song || '').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
-         const tKey = title.toLowerCase().trim();
-         if (seen.has(tKey)) continue;
-         seen.add(tKey);
-         
-         const art = (s.more_info?.singers || s.description || 'Unknown').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
-         const image = (s.image || '').replace(/150x150|50x50/g, '500x500');
-         
-         tracks.push({ id: s.id, title, artist: art, image, source: 'jiosaavn' });
-         if (tracks.length >= 35) break;
-      }
-      if (tracks.length > 0) {
-        setArtistTracks(tracks);
-      } else {
-        const bResp = await fetch(`${BACKEND_URL}/api/artist?name=${encodeURIComponent(artist.name)}`);
-        const bJson = await bResp.json();
-        if (bJson.success) setArtistTracks(bJson.tracks || []);
+      const bResp = await fetch(`${BACKEND_URL}/api/artist?name=${encodeURIComponent(artist.name)}`);
+      const bJson = await bResp.json();
+      if (bJson.success && bJson.tracks) {
+        setArtistTracks(bJson.tracks);
       }
     } catch (e) { console.error('fetchArtist error', e); }
     finally { setArtistLoading(false); }
@@ -2742,20 +2720,8 @@ export default function App() {
               </View>
             )}
 
-            {/* Search Filters */}
-            {!isLoading && !isSearching && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }} contentContainerStyle={{ paddingHorizontal: 20 }}>
-                {['All', 'Top Results', 'Songs', 'Albums', 'Movies'].map(filter => {
-                  const filterKey = filter.toLowerCase().replace(' ', '_');
-                  return (
-                    <TouchableOpacity key={filter} onPress={() => setSearchFilter(filterKey as any)} style={{ alignSelf: 'flex-start', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: searchFilter === filterKey ? moodColor : '#1e1e2a', marginRight: 10, borderWidth: 1, borderColor: searchFilter === filterKey ? moodColor : 'rgba(255,255,255,0.07)' }}>
-                      <Text style={{ color: searchFilter === filterKey ? '#fff' : '#9896a8', fontSize: 13, fontWeight: '600' }}>{filter}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            )}
-
+            {/* Search Filters removed as per user request to fix gap and appearance issues */}
+            
             {isLoading || isSearching ? (
               <View style={styles.centeredBody}>
                 <ActivityIndicator size="large" color={moodColor} />
@@ -2764,7 +2730,7 @@ export default function App() {
             ) : (
               <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                 {/* Top Results / Songs */}
-                {(searchFilter === 'all' || searchFilter === 'top_results') && songsList.length > 0 && (
+                {songsList.length > 0 && (
                   <View style={{ marginBottom: 24 }}>
                     <Text style={styles.sectionHeader}>Top Results</Text>
                     {songsList.slice(0, 3).map((song: any, index: number) => (
@@ -2784,25 +2750,8 @@ export default function App() {
                   </View>
                 )}
 
-                {/* All Songs view when "Songs" filter is selected */}
-                {searchFilter === 'songs' && songsList.length > 0 && (
-                  <View style={{ marginBottom: 24 }}>
-                    <Text style={styles.sectionHeader}>Songs</Text>
-                    {songsList.map((song: any, index: number) => (
-                      <TouchableOpacity key={`song-${index}`} style={[styles.searchResultRow, { backgroundColor: '#16161f' }]} onPress={() => { setAutoplayQueue([]); handleTrackPress(song); }} onLongPress={() => { setContextMenuSong(song); setContextMenuVisible(true); }}>
-                        <Image source={{ uri: song.image }} style={{ width: 50, height: 50, borderRadius: 12, marginRight: 14 }} />
-                        <View style={styles.trackInfo}>
-                          <Text numberOfLines={1} style={styles.trackTitle}>{song.title}</Text>
-                          <Text numberOfLines={1} style={styles.trackArtist}>{song.artist}</Text>
-                        </View>
-                        <Ionicons name="play-circle-outline" size={24} color="#666" />
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-
                 {/* Albums */}
-                {(searchFilter === 'all' || searchFilter === 'albums') && albumResults.length > 0 && (
+                {albumResults.length > 0 && (
                   <View style={{ marginBottom: 24 }}>
                     <Text style={styles.sectionHeader}>Albums</Text>
                     {albumResults.map((album: any, i: number) => (
@@ -2821,7 +2770,7 @@ export default function App() {
                 )}
 
                 {/* Movies */}
-                {(searchFilter === 'all' || searchFilter === 'movies') && movieResults.length > 0 && (
+                {movieResults.length > 0 && (
                   <View style={{ marginBottom: 24 }}>
                     <Text style={styles.sectionHeader}>Movies</Text>
                     {movieResults.map((album: any, i: number) => (
