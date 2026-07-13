@@ -1637,7 +1637,7 @@ def top_artists():
 
 @app.route('/api/artist', methods=['GET'])
 def artist_tracks():
-    """Get 50 unique songs by artist — saavn.dev (BlackHole API) primary, fallbacks."""
+    """Get 50 unique songs by artist using JioSaavn webapi directly."""
     name = request.args.get('name', '').strip()
     if not name:
         return jsonify({'success': False, 'error': 'No artist name provided'})
@@ -1647,48 +1647,61 @@ def artist_tracks():
     if cached is not None:
         return jsonify({'success': True, 'artist': {'name': name}, 'tracks': cached})
 
-    # ── Primary: JioSaavn Direct API ──
     all_songs = []
     seen_titles: set = set()
+    
     try:
-        resp = http_requests.get(
-            f'https://www.jiosaavn.com/api.php?p=1&q={urllib.parse.quote(name)}&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=50&__call=search.getResults',
+        # Step 1: Search for artist and get perma_url token
+        search_resp = http_requests.get(
+            f'https://www.jiosaavn.com/api.php?__call=search.getArtistResults&p=1&q={urllib.parse.quote(name)}&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=5',
             headers=JIOSAAVN_HEADERS, timeout=8
         )
-        data = resp.json()
-        songs_raw = data.get('results', [])
-        for song in songs_raw:
-            song_id = song.get('id', '')
-            title = clean_html(song.get('title', '') or song.get('song', '') or 'Unknown')
-            t_key = title.lower().strip()
-            if not song_id or t_key in seen_titles:
-                continue
+        search_data = search_resp.json()
+        results = search_data.get('results', [])
+        if results:
+            first_artist = results[0]
+            perma_url = first_artist.get('perma_url', '')
+            token = perma_url.split('/')[-1] if '/' in perma_url else ''
             
-            artist = clean_html(song.get('more_info', {}).get('singers', '') or song.get('description', '') or 'Unknown')
-            image = upgrade_image_url(song.get('image', ''))
-            
-            # Instantly decrypt URL for faster playback
-            url = None
-            enc = song.get('more_info', {}).get('encrypted_media_url', '')
-            if enc:
-                url = decrypt_jiosaavn_url(enc)
-            
-            seen_titles.add(t_key)
-            all_songs.append({'id': song_id, 'title': title, 'artist': artist, 'image': image, 'url': url, 'source': 'jiosaavn'})
-            
-            if len(all_songs) >= 50:
-                break
+            if token:
+                # Step 2: Fetch Top Songs using artist token
+                artist_resp = http_requests.get(
+                    f'https://www.jiosaavn.com/api.php?__call=webapi.get&token={token}&type=artist&p=1&n=50&includeMetaTags=0&ctx=web6dot0&api_version=4&_format=json&_marker=0',
+                    headers=JIOSAAVN_HEADERS, timeout=8
+                )
+                artist_data = artist_resp.json()
+                top_songs = artist_data.get('topSongs', [])
+                
+                for song in top_songs:
+                    song_id = song.get('id', '')
+                    title = clean_html(song.get('title', '') or song.get('song', '') or 'Unknown')
+                    t_key = title.lower().strip()
+                    if not song_id or t_key in seen_titles:
+                        continue
+                        
+                    artist_str = clean_html(song.get('subtitle', '') or song.get('singers', '') or name)
+                    image = upgrade_image_url(song.get('image', ''))
+                    
+                    # Decrypt url
+                    url = None
+                    enc = song.get('more_info', {}).get('encrypted_media_url', '')
+                    if enc:
+                        url = decrypt_jiosaavn_url(enc)
+                        
+                    seen_titles.add(t_key)
+                    all_songs.append({'id': song_id, 'title': title, 'artist': artist_str, 'image': image, 'url': url, 'source': 'jiosaavn'})
+                    if len(all_songs) >= 50:
+                        break
     except Exception as e:
-        print(f"JioSaavn direct artist search error: {e}")
+        print(f"JioSaavn direct artist webapi error: {e}")
 
-    # ── Last resort: YouTube ──
-    if len(all_songs) < 5:
-        seen_titles2: set = {s['title'].lower() for s in all_songs}
+    # Fallback ONLY if absolutely 0 results found on JioSaavn (e.g. extremely obscure Western artists)
+    if len(all_songs) == 0:
         for q in [f'{name} best songs', f'{name} top hits']:
             for song in youtube_search_songs(q, max_results=15):
                 t_key = song.get('title', '').lower().strip()
-                if t_key and t_key not in seen_titles2:
-                    seen_titles2.add(t_key)
+                if t_key and t_key not in seen_titles:
+                    seen_titles.add(t_key)
                     song['artist'] = name
                     all_songs.append(song)
                 if len(all_songs) >= 50:
