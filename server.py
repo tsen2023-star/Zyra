@@ -1488,7 +1488,7 @@ TOP_BOLLYWOOD_ARTISTS = [
     },
     {
         "name": "Vishal Dadlani",
-        "image": "https://upload.wikimedia.org/wikipedia/commons/6/6f/Vishal_Dadlani_Indian_Idol_Junior_launch_%28cropped%29.jpg"
+        "image": "https://www.jiosaavn.com/artist/vishal-dadlani-songs/6o-AMde03I8_"
     },
     {
         "name": "Sunidhi Chauhan",
