@@ -1659,7 +1659,7 @@ export default function App() {
 
     // 2. Try backend (Fallback)
     try {
-      const r = await fetch(`${BACKEND_URL}/api/recommendations/queue?songId=${song.id}&artist=${encodeURIComponent(song.artist || '')}&mood=${currentMood}`);
+      const r = await fetch(`${BACKEND_URL}/api/recommendations/queue?songId=${song.id}&title=${encodeURIComponent(song.title || '')}&artist=${encodeURIComponent(song.artist || '')}&mood=${currentMood}`);
       const j = await r.json();
       if (j.success && j.queue?.length > 0) {
         setRelatedSongs(j.queue);
@@ -1854,10 +1854,10 @@ export default function App() {
       const r2 = await fetch(`https://lrclib.net/api/search?q=${query}`);
       const j2 = await r2.json();
       if (Array.isArray(j2) && j2.length > 0) {
-        // Pick first result whose lyrics are NOT Hindi script
+        // Pick first result
         const validEntry = j2.find((entry: any) => {
           const text = entry.syncedLyrics || entry.plainLyrics || '';
-          return text.length > 20 && !isHindi(text);
+          return text.length > 20;
         });
         if (validEntry) {
           const lrcText = validEntry.syncedLyrics || validEntry.plainLyrics || '';
@@ -1869,11 +1869,11 @@ export default function App() {
       }
     } catch {}
 
-    // 2️⃣ lyrics.ovh — plain English romanized text
+    // 2️⃣ lyrics.ovh
     try {
       const r3 = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
       const j3 = await r3.json();
-      if (j3.lyrics && j3.lyrics.length > 20 && !isHindi(j3.lyrics)) {
+      if (j3.lyrics && j3.lyrics.length > 20) {
         setLyrics(j3.lyrics); setLyricsLoading(false); return;
       }
     } catch {}
@@ -1882,7 +1882,7 @@ export default function App() {
     try {
       const resp = await fetch(`${BACKEND_URL}/api/lyrics?title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}`);
       const json = await resp.json();
-      if (json.success && json.lyrics && json.lyrics.length > 20 && !isHindi(json.lyrics)) {
+      if (json.success && json.lyrics && json.lyrics.length > 20) {
         setLyrics(json.lyrics);
         const parsed = parseLRC(json.lyrics);
         if (parsed.length > 0) setParsedLyrics(parsed);
@@ -3747,7 +3747,7 @@ export default function App() {
                   if (tab === 'related' && relatedSongs.length === 0 && !relatedLoading) fetchRelatedSongs(activeTrack);
                 }}
                 style={{ flex: 1, paddingVertical: 7, borderRadius: 20, backgroundColor: playerTab === tab ? moodColor + '22' : 'transparent', borderWidth: 1, borderColor: playerTab === tab ? moodColor : '#333', alignItems: 'center' }}>
-                <Text style={{ color: playerTab === tab ? moodColor : '#555', fontSize: 11, fontWeight: '700' }}>
+                <Text style={{ color: playerTab === tab ? moodColor : '#555', fontSize: 11, fontWeight: '700', lineHeight: 16, includeFontPadding: false }}>
                   {tab === 'queue' ? '♪ QUEUE' : tab === 'lyrics' ? '📝 LYRICS' : '🎯 RELATED'}
                 </Text>
               </TouchableOpacity>
@@ -4313,7 +4313,7 @@ const styles = StyleSheet.create({
   controlsContainer:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 30, marginBottom: 8 },
   largePlayBtn:         { width: 74, height: 74, borderRadius: 37, justifyContent: 'center', alignItems: 'center' },
   queueContainer:       { flex: 1, paddingHorizontal: 20, paddingTop: 4 },
-  queueHeader:          { fontSize: 12, fontWeight: '700', letterSpacing: 1 },
+  queueHeader:          { fontSize: 12, fontWeight: '700', letterSpacing: 1, lineHeight: 18, includeFontPadding: false },
   queueItem:            { flexDirection: 'row', alignItems: 'center', paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
   menuItem:             { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 25, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
 });
