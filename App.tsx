@@ -1839,7 +1839,8 @@ export default function App() {
   const fetchLyrics = async (song: any) => {
     if (!song) return;
     setLyricsLoading(true); setLyrics(''); setParsedLyrics([]); setCurrentLyricIndex(-1);
-    const title = song.title || '';
+    const rawTitle = song.title || '';
+    const title = rawTitle.replace(/\s*\(.*?\)\s*/g, '').replace(/\s*\[.*?\]\s*/g, '').replace(/\s*-.*$/, '').trim();
     const artist = (song.artist || '').split(',')[0].trim();
 
     // Helper: detect if text is mostly Devanagari / Hindi script
@@ -2475,8 +2476,10 @@ export default function App() {
                       style={{ backgroundColor: g.color + '22', borderWidth: 1.5, borderColor: g.color + '88', borderRadius: 14, paddingVertical: 10, paddingHorizontal: 4, alignItems: 'center', width: '31%' }}
                       onPress={async () => {
                         setCurrentMood(g.mood);
-                        setShowMoodGenres(true);
+                        setShowMoodGenres(false); // Do NOT open the modal
                         setIsSearching(true);
+                        setIsSearchFocused(true);
+                        setCurrentScreen('all_songs');
                         setSearchQuery(g.label + ' Playlist');
                         try {
                           // Try to fetch an actual playlist for this mood
@@ -2495,6 +2498,8 @@ export default function App() {
                               });
                               if (mapped.length > 0) {
                                 setSongsList(mapped);
+                                setCurrentScreen('all_songs');
+                                setIsSearchFocused(true);
                                 setIsSearching(false);
                                 return;
                               }
@@ -2511,6 +2516,8 @@ export default function App() {
                               return { id: s.id, title: s.name || '', artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality === audioQuality)?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
                             });
                             setSongsList(mapped);
+                                setCurrentScreen('all_songs');
+                                setIsSearchFocused(true);
                           }
                         } catch {}
                         finally { setIsSearching(false); }
@@ -3988,6 +3995,8 @@ export default function App() {
                           });
                           if (mapped.length > 0) {
                             setSongsList(mapped);
+                            setCurrentScreen('all_songs');
+                            setIsSearchFocused(true);
                             setIsSearching(false);
                             return;
                           }
@@ -4004,6 +4013,8 @@ export default function App() {
                           return { id: s.id, title: s.name || '', artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality === audioQuality)?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
                         });
                         setSongsList(mapped);
+                        setCurrentScreen('all_songs');
+                        setIsSearchFocused(true);
                       }
                     } catch {}
                     finally { setIsSearching(false); }
@@ -4048,6 +4059,8 @@ export default function App() {
                           });
                           if (mapped.length > 0) {
                             setSongsList(mapped);
+                            setCurrentScreen('all_songs');
+                            setIsSearchFocused(true);
                             setIsSearching(false);
                             return;
                           }
@@ -4063,6 +4076,8 @@ export default function App() {
                           return { id: s.id, title: s.name || '', artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality === audioQuality)?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
                         });
                         setSongsList(mapped);
+                        setCurrentScreen('all_songs');
+                        setIsSearchFocused(true);
                       }
                     } catch {}
                     finally { setIsSearching(false); }
