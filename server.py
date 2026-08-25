@@ -1344,7 +1344,7 @@ def search_playlists_jiosaavn():
             playlists.append({
                 'id': p.get('listid'),
                 'title': p.get('listname') or p.get('title') or '',
-                'subtitle': 'JioSaavn Playlist',
+                'subtitle': 'Playlist',
                 'image': [{'quality': '500x500', 'url': img}]
             })
         return jsonify({'success': True, 'data': {'results': playlists}})
@@ -1655,7 +1655,7 @@ def artist_tracks():
     if not name:
         return jsonify({'success': False, 'error': 'No artist name provided'})
 
-    cache_key = f'artist:{name.lower()}'
+    cache_key = f'artist_v2:{name.lower()}'
     cached = get_cached_search(cache_key)
     if cached is not None:
         return jsonify({'success': True, 'artist': {'name': name}, 'tracks': cached})
@@ -1703,7 +1703,7 @@ def artist_tracks():
                         
                     seen_titles.add(t_key)
                     all_songs.append({'id': song_id, 'title': title, 'artist': artist_str, 'image': image, 'url': url, 'source': 'jiosaavn'})
-                    if len(all_songs) >= 50:
+                    if len(all_songs) >= 60:
                         break
     except Exception as e:
         print(f"JioSaavn direct artist webapi error: {e}")
@@ -1711,13 +1711,13 @@ def artist_tracks():
     # Fallback ONLY if absolutely 0 results found on JioSaavn (e.g. extremely obscure Western artists)
     if len(all_songs) == 0:
         for q in [f'{name} best songs', f'{name} top hits']:
-            for song in youtube_search_songs(q, max_results=15):
+            for song in youtube_search_songs(q, max_results=30):
                 t_key = song.get('title', '').lower().strip()
                 if t_key and t_key not in seen_titles:
                     seen_titles.add(t_key)
                     song['artist'] = name
                     all_songs.append(song)
-                if len(all_songs) >= 50:
+                if len(all_songs) >= 60:
                     break
 
     if all_songs:
