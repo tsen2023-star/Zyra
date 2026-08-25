@@ -12,7 +12,6 @@ import requests as http_requests
 import random, time, os, re, html, jwt, hashlib, uuid
 from base64 import b64decode
 from datetime import datetime, timedelta
-import psycopg2
 from recommender import (
     detect_mood, get_query_for_mood, get_time_of_day_mood,
     build_recommendation_reason, MOOD_LABELS
@@ -27,27 +26,45 @@ def serve_kk_profile():
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 
-DATABASE_URL    = os.environ.get('DATABASE_URL', '')
-JWT_SECRET      = os.environ.get('JWT_SECRET', 'zyra-super-secret-2025')
+DATABASE_URL    = os.environ.get('DATABASE_URL')
+JWT_SECRET      = os.environ.get('JWT_SECRET')
+if not DATABASE_URL or not JWT_SECRET:
+    raise ValueError("CRITICAL SECURITY ERROR: DATABASE_URL and JWT_SECRET environment variables MUST be set in production!")
+
 JWT_EXPIRY_DAYS = 30
 
-DB_SSL_MODE = 'require'
 
-# ─── PostgreSQL ───────────────────────────────────────────────────────────────
+# ─── Security Headers & Rate Limiting ─────────────────────────────────────────
+import collections
+RATE_LIMIT_DB = collections.defaultdict(list)
+def check_rate_limit(key, max_req=5, window=60):
+    now = time.time()
+    RATE_LIMIT_DB[key] = [t for t in RATE_LIMIT_DB[key] if now - t < window]
+    if len(RATE_LIMIT_DB[key]) >= max_req:
+        return False
+    RATE_LIMIT_DB[key].append(now)
+    return True
+
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    return response
+
+# ─── MongoDB ─────────────────────────────────────────────────────────────────
+import pymongo
+from pymongo.errors import ConnectionFailure
+import json as _json
+
+mongo_client = None
 
 def get_db():
-    return psycopg2.connect(DATABASE_URL, sslmode=DB_SSL_MODE, connect_timeout=15)
-
-def _row_to_dict(description, row):
-    if row is None or description is None:
-        return None
-    return {desc[0]: row[i] for i, desc in enumerate(description)}
-
-def _rows_to_dicts(description, rows):
-    if not description or not rows:
-        return []
-    cols = [d[0] for d in description]
-    return [dict(zip(cols, row)) for row in rows]
+    global mongo_client
+    if not mongo_client:
+        mongo_client = pymongo.MongoClient(DATABASE_URL, serverSelectionTimeoutMS=15000)
+    # Using 'zyra' as default db if not specified in URI
+    return mongo_client.get_default_database('zyra')
 
 def _to_list(val):
     if val is None: return []
@@ -70,29 +87,13 @@ def init_db():
         print('WARNING: DATABASE_URL not set — skipping DB init')
         return
     try:
-        conn = get_db()
-        cur  = conn.cursor()
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id            TEXT PRIMARY KEY,
-                email         TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                username      TEXT,
-                created_at    TIMESTAMP DEFAULT NOW(),
-                favorites     JSONB DEFAULT '[]'::jsonb,
-                playlists     JSONB DEFAULT '[]'::jsonb,
-                history       JSONB DEFAULT '[]'::jsonb,
-                downloads     JSONB DEFAULT '[]'::jsonb,
-                settings      JSONB DEFAULT '{"shake_enabled":false,"smart_autoplay":true}'::jsonb
-            )
-        """)
-        conn.commit()
-        cur.close(); conn.close()
-        print('PostgreSQL DB initialized OK')
+        db = get_db()
+        db.users.create_index("email", unique=True)
+        print('MongoDB initialized OK')
     except Exception as e:
         print(f'DB init error: {e}')
 
-init_db()
+
 
 # ─── In-memory cache ──────────────────────────────────────────────────────────
 
@@ -402,42 +403,31 @@ def set_cached_yt_url(key, url):
 
 # ─── DB Helpers ───────────────────────────────────────────────────────────────
 
+def _normalize_user(doc):
+    if not doc: return None
+    if '_id' in doc: del doc['_id']
+    doc['favorites'] = _to_list(doc.get('favorites'))
+    doc['playlists'] = _to_list(doc.get('playlists'))
+    doc['history']   = _to_list(doc.get('history'))
+    doc['downloads'] = _to_list(doc.get('downloads'))
+    doc['settings']  = _to_dict_safe(doc.get('settings'))
+    return doc
+
 def db_get_user_by_email(email):
-    conn = get_db(); cur = conn.cursor()
-    cur.execute("SELECT * FROM users WHERE email = %s", (email,))
-    row = cur.fetchone()
-    result = _row_to_dict(cur.description, row)
-    cur.close(); conn.close()
-    if result:
-        result['favorites'] = _to_list(result.get('favorites'))
-        result['playlists'] = _to_list(result.get('playlists'))
-        result['history']   = _to_list(result.get('history'))
-        result['downloads'] = _to_list(result.get('downloads'))
-        result['settings']  = _to_dict_safe(result.get('settings'))
-    return result
+    db = get_db()
+    row = db.users.find_one({"email": email})
+    return _normalize_user(row)
 
 def db_get_user_by_id(user_id):
-    conn = get_db(); cur = conn.cursor()
-    cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))
-    row = cur.fetchone()
-    result = _row_to_dict(cur.description, row)
-    cur.close(); conn.close()
-    if result:
-        result['favorites'] = _to_list(result.get('favorites'))
-        result['playlists'] = _to_list(result.get('playlists'))
-        result['history']   = _to_list(result.get('history'))
-        result['downloads'] = _to_list(result.get('downloads'))
-        result['settings']  = _to_dict_safe(result.get('settings'))
-    return result
+    db = get_db()
+    row = db.users.find_one({"id": user_id})
+    return _normalize_user(row)
 
 def db_update_user(user_id, **fields):
     if not fields:
         return
-    sets   = ', '.join(f"{k} = %s" for k in fields)
-    values = list(fields.values()) + [user_id]
-    conn   = get_db(); cur = conn.cursor()
-    cur.execute(f"UPDATE users SET {sets} WHERE id = %s", values)
-    conn.commit(); cur.close(); conn.close()
+    db = get_db()
+    db.users.update_one({"id": user_id}, {"$set": fields})
 
 # ─── Password Hashing ─────────────────────────────────────────────────────────
 
@@ -798,22 +788,19 @@ def youtube_fallback():
 def health():
     db_ok = False
     try:
-        conn = get_db(); cur = conn.cursor()
-        cur.execute('SELECT 1'); cur.close(); conn.close()
+        db = get_db()
+        db.command('ping')
         db_ok = True
     except Exception as e:
         pass
-    return jsonify({'status': 'ok', 'backend': 'JioSaavn + PostgreSQL', 'db': 'connected' if db_ok else 'error'})
+    return jsonify({'status': 'ok', 'backend': 'JioSaavn + MongoDB', 'db': 'connected' if db_ok else 'error'})
 
 @app.route('/api/test-db', methods=['GET'])
 def test_db():
     try:
-        conn = get_db(); cur = conn.cursor()
-        cur.execute('SELECT COUNT(*) FROM users')
-        row = cur.fetchone()
-        cur.close(); conn.close()
-        count = row[0] if row else 0
-        return jsonify({'success': True, 'message': 'PostgreSQL connected!', 'user_count': count})
+        db = get_db()
+        count = db.users.count_documents({})
+        return jsonify({'success': True, 'message': 'MongoDB connected!', 'user_count': count})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -821,6 +808,9 @@ def test_db():
 
 @app.route('/api/auth/register', methods=['POST'])
 def register():
+    ip = request.remote_addr
+    if not check_rate_limit(f'register_{ip}', max_req=5, window=60):
+        return jsonify({'success': False, 'error': 'Too many attempts. Try again later.'}), 429
     try:
         data     = request.get_json() or {}
         email    = data.get('email', '').strip().lower()
@@ -837,22 +827,34 @@ def register():
         user_id = str(uuid.uuid4())
         hashed  = hash_password(password)
 
-        conn = get_db(); cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO users (id, email, password_hash, username) VALUES (%s, %s, %s, %s)",
-            (user_id, email, hashed, username)
-        )
-        conn.commit(); cur.close(); conn.close()
+        import datetime
+        db = get_db()
+        db.users.insert_one({
+            "id": user_id,
+            "email": email,
+            "password_hash": hashed,
+            "username": username,
+            "created_at": datetime.datetime.utcnow().isoformat(),
+            "favorites": [],
+            "playlists": [],
+            "history": [],
+            "downloads": [],
+            "settings": {"shake_enabled": False, "smart_autoplay": True}
+        })
 
         token = create_token(user_id)
         return jsonify({'success': True, 'token': token, 'userId': user_id, 'username': username})
     except Exception as e:
-        print(f'Register error: {e}')
-        return jsonify({'success': False, 'error': str(e)}), 500
+        error_id = str(uuid.uuid4())
+        print(f'Register error [{error_id}]: {e}')
+        return jsonify({'success': False, 'error': f'An internal error occurred. Ref: {error_id}'}), 500
 
 
 @app.route('/api/auth/login', methods=['POST'])
 def login():
+    ip = request.remote_addr
+    if not check_rate_limit(f'login_{ip}', max_req=5, window=60):
+        return jsonify({'success': False, 'error': 'Too many attempts. Try again later.'}), 429
     try:
         data     = request.get_json() or {}
         email    = data.get('email', '').strip().lower()
@@ -870,9 +872,10 @@ def login():
         token = create_token(user['id'])
         return jsonify({'success': True, 'token': token, 'userId': user['id'], 'username': user.get('username', '')})
     except Exception as e:
-        print(f'Login error: {e}')
+        error_id = str(uuid.uuid4())
         import traceback
-        return jsonify({'success': False, 'error': f"{repr(e)} | {traceback.format_exc()}"}), 500
+        print(f'Login error [{error_id}]: {e}\n{traceback.format_exc()}')
+        return jsonify({'success': False, 'error': f'An internal error occurred. Ref: {error_id}'}), 500
 
 
 # ─── Forgot Password / OTP ────────────────────────────────────────────────────
@@ -894,7 +897,7 @@ def send_otp_email(to_email: str, otp: str) -> bool:
     """Send OTP via Resend API (since Render blocks standard SMTP)."""
     RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
     if not RESEND_API_KEY or not EMAIL_FROM:
-        print(f'[OTP DEBUG] OTP for {to_email}: {otp}')  # dev fallback
+        print(f'[OTP DEBUG] OTP generated for [REDACTED EMAIL]')
         return True
     try:
         html_body = f"""
