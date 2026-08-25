@@ -1366,60 +1366,18 @@ export default function App() {
   const fetchLiveTracks = async (query: string) => {
     try {
       setIsSearching(true);
-      // 1. Fetch Songs
-      const songResp = await fetch(`https://www.jiosaavn.com/api.php?__call=search.getResults&q=${encodeURIComponent(query)}&n=40&p=1&_format=json&_marker=0&ctx=android`, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-      });
-      const songData = await songResp.json();
-      const sRaw = songData.results || [];
-      const songsList = [];
-      const seen = new Set();
-      for (const s of sRaw) {
-        if (!s.id) continue;
-        const title = (s.title || s.song || '').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
-        const tKey = title.toLowerCase().trim();
-        if (seen.has(tKey)) continue;
-        seen.add(tKey);
-        const artist = (s.more_info?.singers || s.description || '').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
-        const image = (s.image || '').replace(/150x150|50x50/g, '500x500');
-        songsList.push({ id: s.id, title, artist, image, source: 'jiosaavn' });
+      const resp = await fetch(`${BACKEND_URL}/api/search?query=${encodeURIComponent(query)}`);
+      const json = await resp.json();
+      if (json.success && json.data) {
+        setSongsList(json.data.songs || []);
+        setAlbumResults(json.data.albums || []);
+        setArtistResults(json.data.artists || []);
+      } else {
+        setSongsList([]); setAlbumResults([]); setArtistResults([]);
       }
-      setSongsList(songsList);
-
-      // 2. Fetch Albums and Artists (using autocomplete)
-      const autoResp = await fetch(`https://www.jiosaavn.com/api.php?__call=autocomplete.get&query=${encodeURIComponent(query)}&_format=json&_marker=0&ctx=android`, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-      });
-      const autoData = await autoResp.json();
-      
-      const aRaw = autoData.albums?.data || [];
-      const albumsList = [];
-      for (const a of aRaw) {
-        if (!a.id) continue;
-        albumsList.push({
-          id: a.id,
-          name: (a.title || '').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&'),
-          artist: (a.music || a.description || '').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&'),
-          image: (a.image || '').replace(/150x150|50x50/g, '500x500')
-        });
-      }
-      setAlbumResults(albumsList);
-      setMovieResults(albumsList.map((a: any) => ({ ...a, description: a.artist })));
-
-      const artRaw = autoData.artists?.data || [];
-      const artistList = [];
-      for (const a of artRaw) {
-        if (!a.id) continue;
-        artistList.push({
-          id: a.id,
-          name: (a.title || '').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&'),
-          image: (a.image || '').replace(/150x150|50x50/g, '500x500')
-        });
-      }
-      setArtistResults(artistList);
     } catch (e) {
       console.warn('Search failed:', e);
-      setSongsList([]); setAlbumResults([]); setMovieResults([]); setArtistResults([]);
+      setSongsList([]); setAlbumResults([]); setArtistResults([]);
     } finally {
       setIsSearching(false);
     }
@@ -1890,20 +1848,10 @@ export default function App() {
       return devanagari > 0; // >15% Hindi chars = Hindi lyrics
     };
 
-    // 1️⃣ Saavn API — most reliable for Indian songs
+    // 1️⃣ lrclib.net — best source for synchronized lyrics
     try {
-      const r1 = await fetch(`https://saavn.dev/api/songs/${song.id}/lyrics`);
-      const j1 = await r1.json();
-      if (j1.success && j1.data?.lyrics) {
-        setLyrics(j1.data.lyrics.replace(/<br>/g, "\n"));
-        setLyricsLoading(false);
-        return;
-      }
-    } catch {}
-
-    // 2️⃣ lrclib.net — best source for romanized English pronunciation
-    try {
-      const r2 = await fetch(`https://lrclib.net/api/search?track_name=${encodeURIComponent(title)}&artist_name=${encodeURIComponent(artist)}`);
+      const query = encodeURIComponent(`${title} ${artist}`);
+      const r2 = await fetch(`https://lrclib.net/api/search?q=${query}`);
       const j2 = await r2.json();
       if (Array.isArray(j2) && j2.length > 0) {
         // Pick first result whose lyrics are NOT Hindi script
@@ -1920,6 +1868,7 @@ export default function App() {
         }
       }
     } catch {}
+
     // 2️⃣ lyrics.ovh — plain English romanized text
     try {
       const r3 = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
@@ -1928,6 +1877,7 @@ export default function App() {
         setLyrics(j3.lyrics); setLyricsLoading(false); return;
       }
     } catch {}
+
     // 3️⃣ Backend fallback
     try {
       const resp = await fetch(`${BACKEND_URL}/api/lyrics?title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}`);
@@ -1939,18 +1889,7 @@ export default function App() {
         setLyricsLoading(false); return;
       }
     } catch {}
-    // 4️⃣ Saavn API exact match (Local Fallback)
-    try {
-      const res = await fetch(`https://saavn.dev/api/songs/${song.id}/lyrics`);
-      const json = await res.json();
-      if (json.success && json.data?.lyrics) {
-        let lx = json.data.lyrics.replace(/<br>/g, '\n');
-        setLyrics(lx);
-        const parsed = parseLRC(lx);
-        if (parsed.length > 0) setParsedLyrics(parsed);
-        setLyricsLoading(false); return;
-      }
-    } catch {}
+
     setLyrics('Lyrics not available for this song.');
     setLyricsLoading(false);
   };
@@ -2720,7 +2659,35 @@ export default function App() {
               </View>
             )}
 
-            {/* Search Filters removed as per user request to fix gap and appearance issues */}
+            {/* Search Filters */}
+            {(searchQuery.trim().length > 0) && (
+              <View style={{ marginTop: 0, marginBottom: 16 }}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 24, gap: 10 }}>
+                  {['all', 'top_results', 'songs', 'albums', 'artists'].map(filter => (
+                    <TouchableOpacity 
+                      key={filter}
+                      onPress={() => setSearchFilter(filter as any)}
+                      style={{
+                        paddingHorizontal: 16,
+                        paddingVertical: 8,
+                        borderRadius: 20,
+                        backgroundColor: searchFilter === filter ? moodColor : '#16161f',
+                        borderWidth: 1,
+                        borderColor: searchFilter === filter ? moodColor : 'rgba(255,255,255,0.1)'
+                      }}>
+                      <Text style={{ 
+                        color: searchFilter === filter ? '#fff' : '#888',
+                        fontSize: 12,
+                        fontWeight: '600',
+                        textTransform: 'capitalize'
+                      }}>
+                        {filter.replace('_', ' ')}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
             
             {isLoading || isSearching ? (
               <View style={styles.centeredBody}>
@@ -2730,10 +2697,10 @@ export default function App() {
             ) : (
               <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                 {/* Top Results / Songs */}
-                {songsList.length > 0 && (
+                {(searchFilter === 'all' || searchFilter === 'top_results' || searchFilter === 'songs') && songsList.length > 0 && (
                   <View style={{ marginBottom: 24 }}>
                     <Text style={styles.sectionHeader}>Top Results</Text>
-                    {songsList.slice(0, 3).map((song: any, index: number) => (
+                    {songsList.slice(0, 10).map((song: any, index: number) => (
                       <TouchableOpacity key={index} style={[styles.topResultCard, { borderColor: index === 0 ? moodColor + '88' : 'rgba(255,255,255,0.08)', backgroundColor: '#16161f' }]} onPress={() => { setAutoplayQueue([]); handleTrackPress(song); }} onLongPress={() => { setContextMenuSong(song); setContextMenuVisible(true); }}>
                         <Image source={{ uri: song.image }} style={{ width: 56, height: 56, borderRadius: 12, marginRight: 14 }} />
                         <View style={styles.trackInfo}>
@@ -2751,7 +2718,7 @@ export default function App() {
                 )}
 
                 {/* Albums */}
-                {albumResults.length > 0 && (
+                {(searchFilter === 'all' || searchFilter === 'albums') && albumResults.length > 0 && (
                   <View style={{ marginBottom: 24 }}>
                     <Text style={styles.sectionHeader}>Albums</Text>
                     {albumResults.map((album: any, i: number) => (
@@ -2769,18 +2736,18 @@ export default function App() {
                   </View>
                 )}
 
-                {/* Movies */}
-                {movieResults.length > 0 && (
+                {/* Artists */}
+                {(searchFilter === 'all' || searchFilter === 'artists') && artistResults.length > 0 && (
                   <View style={{ marginBottom: 24 }}>
-                    <Text style={styles.sectionHeader}>Movies</Text>
-                    {movieResults.map((album: any, i: number) => (
-                      <TouchableOpacity key={`movie-${i}`} style={[styles.searchResultRow, { backgroundColor: '#16161f' }]} onPress={() => openAlbumView(album)}>
-                        <View style={{ width: 50, height: 50, borderRadius: 12, backgroundColor: '#222', marginRight: 14, overflow: 'hidden' }}>
-                          {album.image ? <Image source={{ uri: album.image }} style={{ width: 50, height: 50 }} /> : <Ionicons name="film" size={24} color={moodColor} style={{ alignSelf: 'center', marginTop: 13 }} />}
+                    <Text style={styles.sectionHeader}>Artists</Text>
+                    {artistResults.map((artist: any, i: number) => (
+                      <TouchableOpacity key={i} style={[styles.searchResultRow, { backgroundColor: '#16161f' }]} onPress={() => { setSearchQuery(artist.name || artist.title); }}>
+                        <View style={{ width: 50, height: 50, borderRadius: 25, backgroundColor: '#222', marginRight: 14, overflow: 'hidden' }}>
+                          {artist.image ? <Image source={{ uri: artist.image }} style={{ width: 50, height: 50 }} /> : <Ionicons name="person" size={24} color={moodColor} style={{ alignSelf: 'center', marginTop: 13 }} />}
                         </View>
                         <View style={styles.trackInfo}>
-                          <Text numberOfLines={1} style={styles.trackTitle}>{album.name || album.title}</Text>
-                          <Text numberOfLines={1} style={styles.trackArtist}>{album.description || album.primaryArtists || album.artist || 'Album'}</Text>
+                          <Text numberOfLines={1} style={styles.trackTitle}>{artist.name || artist.title}</Text>
+                          <Text numberOfLines={1} style={styles.trackArtist}>Artist</Text>
                         </View>
                         <Ionicons name="chevron-forward" size={18} color="#666" />
                       </TouchableOpacity>
