@@ -1268,9 +1268,19 @@ def autoplay():
 @app.route('/api/recommendations/queue', methods=['GET'])
 def recommendations_queue():
     song_id = request.args.get('songId', '').strip()
-    mood    = request.args.get('mood',   '').strip() or get_time_of_day_mood()
+    artist  = request.args.get('artist', '').strip()
+    title   = request.args.get('title', '').strip()
+    mood    = request.args.get('mood',   '').strip()
+    
+    if title or artist:
+        detected = detect_mood(title, artist)
+        if detected != 'default':
+            mood = detected
+            
+    if not mood:
+        mood = get_time_of_day_mood()
+        
     exclude_ids = {song_id} if song_id else set()
-
     query   = get_query_for_mood(mood)
     results = get_cached_search(query)
     if not results:
@@ -1362,7 +1372,7 @@ def get_playlist_details_jiosaavn(playlist_id):
                 'name': s.get('title') or s.get('song') or '',
                 'artists': {'primary': [{'name': s.get('primary_artists') or s.get('singers') or ''}]},
                 'image': [{'quality': '500x500', 'url': img}],
-                'downloadUrl': [{'quality': '320kbps', 'url': s.get('url') or s.get('perma_url') or ''}],
+                'downloadUrl': [],
                 'duration': s.get('duration') or 0
             })
         return jsonify({'success': True, 'data': {'songs': songs}})
