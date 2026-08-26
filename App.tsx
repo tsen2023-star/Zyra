@@ -2497,9 +2497,11 @@ export default function App() {
                                 return { id: s.id, title: (s.name || '').replace(/&quot;/g, '"').replace(/&amp;/g, '&'), artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality === audioQuality)?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
                               });
                               if (mapped.length > 0) {
-                                setSongsList(mapped);
-                                setCurrentScreen('all_songs');
-                                setIsSearchFocused(true);
+                                const pdata_obj = pdata.data || {};
+                                pdata_obj.songs = mapped;
+                                setSelectedAlbum(pdata_obj);
+                                setCurrentScreen('album_view');
+                                setIsSearchFocused(false);
                                 setIsSearching(false);
                                 return;
                               }
@@ -2515,9 +2517,9 @@ export default function App() {
                               const dl = s.downloadUrl || []; const im = s.image || [];
                               return { id: s.id, title: s.name || '', artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality === audioQuality)?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
                             });
-                            setSongsList(mapped);
-                                setCurrentScreen('all_songs');
-                                setIsSearchFocused(true);
+                            setSelectedAlbum({ name: 'Playlist', primaryArtists: 'Zyra Mix', image: [], songs: mapped });
+                            setCurrentScreen('album_view');
+                            setIsSearchFocused(false);
                           }
                         } catch {}
                         finally { setIsSearching(false); }
@@ -3994,9 +3996,11 @@ export default function App() {
                             return { id: s.id, title: (s.name || '').replace(/&quot;/g, '"').replace(/&amp;/g, '&'), artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality === audioQuality)?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
                           });
                           if (mapped.length > 0) {
-                            setSongsList(mapped);
-                            setCurrentScreen('all_songs');
-                            setIsSearchFocused(true);
+                            const pdata_obj = pdata.data || {};
+                            pdata_obj.songs = mapped;
+                            setSelectedAlbum(pdata_obj);
+                            setCurrentScreen('album_view');
+                            setIsSearchFocused(false);
                             setIsSearching(false);
                             return;
                           }
@@ -4012,9 +4016,9 @@ export default function App() {
                           const dl = s.downloadUrl || []; const im = s.image || [];
                           return { id: s.id, title: s.name || '', artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality === audioQuality)?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
                         });
-                        setSongsList(mapped);
-                        setCurrentScreen('all_songs');
-                        setIsSearchFocused(true);
+                        setSelectedAlbum({ name: 'Playlist', primaryArtists: 'Zyra Mix', image: [], songs: mapped });
+                        setCurrentScreen('album_view');
+                        setIsSearchFocused(false);
                       }
                     } catch {}
                     finally { setIsSearching(false); }
@@ -4058,9 +4062,11 @@ export default function App() {
                             return { id: s.id, title: (s.name || '').replace(/&quot;/g, '"').replace(/&amp;/g, '&'), artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality === audioQuality)?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
                           });
                           if (mapped.length > 0) {
-                            setSongsList(mapped);
-                            setCurrentScreen('all_songs');
-                            setIsSearchFocused(true);
+                            const pdata_obj = pdata.data || {};
+                            pdata_obj.songs = mapped;
+                            setSelectedAlbum(pdata_obj);
+                            setCurrentScreen('album_view');
+                            setIsSearchFocused(false);
                             setIsSearching(false);
                             return;
                           }
@@ -4075,9 +4081,9 @@ export default function App() {
                           const dl = s.downloadUrl || []; const im = s.image || [];
                           return { id: s.id, title: s.name || '', artist: s.artists?.primary?.map((a:any) => a.name).join(', ') || '', image: im.find((i:any) => i.quality==='500x500')?.url || im[im.length-1]?.url || '', url: dl.find((u:any) => u.quality === audioQuality)?.url || dl[dl.length-1]?.url || '', duration: s.duration || 0 };
                         });
-                        setSongsList(mapped);
-                        setCurrentScreen('all_songs');
-                        setIsSearchFocused(true);
+                        setSelectedAlbum({ name: 'Playlist', primaryArtists: 'Zyra Mix', image: [], songs: mapped });
+                        setCurrentScreen('album_view');
+                        setIsSearchFocused(false);
                       }
                     } catch {}
                     finally { setIsSearching(false); }
