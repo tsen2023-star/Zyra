@@ -1,3 +1,4 @@
+import Sanscript from '@indic-transliteration/sanscript';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity,
@@ -142,6 +143,15 @@ const ArtistAvatar = ({ art, size = 80, theme, moodColor }: any) => {
       )}
     </View>
   );
+};
+
+
+const formatLyrics = (text: string) => {
+  if (!text) return '';
+  try {
+    const transliterated = Sanscript.t(text, 'devanagari', 'iast');
+    return transliterated.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  } catch (e) { return text; }
 };
 
 export default function App() {
@@ -1873,8 +1883,9 @@ export default function App() {
         });
         if (validEntry) {
           const lrcText = validEntry.syncedLyrics || validEntry.plainLyrics || '';
-          setLyrics(lrcText);
-          const parsed = parseLRC(lrcText);
+          const fmt = formatLyrics(lrcText);
+          setLyrics(fmt);
+          const parsed = parseLRC(fmt);
           if (parsed.length > 0) setParsedLyrics(parsed);
           setLyricsLoading(false); return;
         }
@@ -1886,7 +1897,7 @@ export default function App() {
       const r3 = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
       const j3 = await r3.json();
       if (j3.lyrics && j3.lyrics.length > 20) {
-        setLyrics(j3.lyrics); setLyricsLoading(false); return;
+        setLyrics(formatLyrics(j3.lyrics)); setLyricsLoading(false); return;
       }
     } catch {}
 
@@ -1895,8 +1906,9 @@ export default function App() {
       const resp = await fetch(`${BACKEND_URL}/api/lyrics?title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}`);
       const json = await resp.json();
       if (json.success && json.lyrics && json.lyrics.length > 20) {
-        setLyrics(json.lyrics);
-        const parsed = parseLRC(json.lyrics);
+        const fmt2 = formatLyrics(json.lyrics);
+        setLyrics(fmt2);
+        const parsed = parseLRC(fmt2);
         if (parsed.length > 0) setParsedLyrics(parsed);
         setLyricsLoading(false); return;
       }
