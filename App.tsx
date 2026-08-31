@@ -149,8 +149,11 @@ const ArtistAvatar = ({ art, size = 80, theme, moodColor }: any) => {
 const formatLyrics = (text: string) => {
   if (!text) return '';
   try {
-    const transliterated = Sanscript.t(text, 'devanagari', 'iast');
-    return transliterated.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    let t = Sanscript.t(text, 'gurmukhi', 'devanagari');
+    t = t.replace(/़/g, '').replace(/ँ/g, 'ं').replace(/ੱ/g, '');
+    t = Sanscript.t(t, 'devanagari', 'iast');
+    t = t.replace(/ṃ/g, 'n').replace(/m̐/g, 'n');
+    return t.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   } catch (e) { return text; }
 };
 
