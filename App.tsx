@@ -1302,12 +1302,21 @@ export default function App() {
       const downloadRes = await FileSystem.downloadAsync(urlToDownload, fileUri);
       if (!downloadRes.uri) throw new Error('Download failed');
       const entry = { ...song, localUri: downloadRes.uri };
-      const json  = await apiCall('/api/user/downloads', 'POST', entry);
-      if (json.success) {
-        setDownloads(json.data.downloads);
-        AsyncStorage.setItem('cachedDownloads', JSON.stringify(json.data.downloads));
-        showAlert('Downloaded', 'Song saved for offline listening!');
-      }
+      
+      // Save locally first to ensure it works even if backend sync fails
+      const newDownloads = [entry, ...downloads];
+      setDownloads(newDownloads);
+      AsyncStorage.setItem('cachedDownloads', JSON.stringify(newDownloads));
+      showAlert('Downloaded', 'Song saved for offline listening!');
+      
+      // Try to sync with backend
+      try {
+        const json = await apiCall('/api/user/downloads', 'POST', entry);
+        if (json && json.success && json.data?.downloads) {
+          setDownloads(json.data.downloads);
+          AsyncStorage.setItem('cachedDownloads', JSON.stringify(json.data.downloads));
+        }
+      } catch (e) { console.log('Backend sync failed, but saved locally'); }
     } catch (e) { console.error('Download error', e); showAlert('Error', 'Download failed. Please try again.'); }
   };
 
@@ -1852,7 +1861,9 @@ export default function App() {
     // 1️⃣ lrclib.net — best source for synchronized lyrics
     try {
       const query = encodeURIComponent(`${title} ${artist}`);
-      const r2 = await fetch(`https://lrclib.net/api/search?q=${query}`);
+      const r2 = await fetch(`https://lrclib.net/api/search?q=${query}`, {
+        headers: { 'User-Agent': 'ZyraMusicApp/1.0 (Mozilla/5.0)' }
+      });
       const j2 = await r2.json();
       if (Array.isArray(j2) && j2.length > 0) {
         // Pick first result
@@ -3664,7 +3675,7 @@ export default function App() {
               <TouchableOpacity
                 onPress={() => activeTrack && downloadSong(activeTrack)}
                 style={{ width: 48, height: 42, backgroundColor: '#ffffff', borderTopLeftRadius: 21, borderBottomLeftRadius: 21, borderTopRightRadius: 4, borderBottomRightRadius: 4, justifyContent: 'center', alignItems: 'center', marginRight: 1.5 }}>
-                <Ionicons name="arrow-down-outline" size={20} color="#000" />
+                <Ionicons name={downloads.some(d => d.id === activeTrack?.id) ? "checkmark" : "arrow-down-outline"} size={20} color={downloads.some(d => d.id === activeTrack?.id) ? "#4caf50" : "#000"} />
               </TouchableOpacity>
               {/* Favourite heart */}
               <TouchableOpacity
