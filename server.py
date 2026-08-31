@@ -1905,31 +1905,27 @@ def get_trending():
 
 @app.route('/api/lyrics', methods=['GET'])
 def get_lyrics():
-    """Fetch lyrics from lyrics.ovh (free, no API key needed)."""
+    """Fetch lyrics from lrclib.net (free, best for Hindi/synced)."""
     title  = request.args.get('title',  '').strip()
     artist = request.args.get('artist', '').strip()
     if not title or not artist:
         return jsonify({'success': False, 'error': 'title and artist required'})
     try:
-        # Clean title (remove feat., remix, etc for better match)
         clean_title  = re.sub(r'\s*\(.*?\)', '', title).strip()
-        clean_artist = artist.split(',')[0].strip()  # use primary artist only
+        clean_artist = artist.split(',')[0].strip()
+        query = urllib.parse.quote(f"{clean_title} {clean_artist}")
         r = http_requests.get(
-            f'https://api.lyrics.ovh/v1/{clean_artist}/{clean_title}',
+            f'https://lrclib.net/api/search?q={query}',
+            headers={'User-Agent': 'ZyraBackend/1.0 (Mozilla/5.0)'},
             timeout=8,
         )
         if r.status_code == 200:
             data = r.json()
-            lyrics = data.get('lyrics', '')
-            if lyrics:
-                return jsonify({'success': True, 'lyrics': lyrics.strip()})
-        # Fallback: try with original title
-        r2 = http_requests.get(f'https://api.lyrics.ovh/v1/{artist}/{title}', timeout=8)
-        if r2.status_code == 200:
-            data2 = r2.json()
-            lyrics2 = data2.get('lyrics', '')
-            if lyrics2:
-                return jsonify({'success': True, 'lyrics': lyrics2.strip()})
+            if isinstance(data, list) and len(data) > 0:
+                for entry in data:
+                    text = entry.get('syncedLyrics') or entry.get('plainLyrics') or ''
+                    if len(text) > 20:
+                        return jsonify({'success': True, 'lyrics': text.strip()})
         return jsonify({'success': False, 'error': 'Lyrics not found'})
     except Exception as e:
         print(f'Lyrics error: {e}')
