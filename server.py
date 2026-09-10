@@ -894,37 +894,44 @@ EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD', '')
 
 
 def send_otp_email(to_email: str, otp: str) -> bool:
-    """Send OTP via Resend API (since Render blocks standard SMTP)."""
-    RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
-    if not RESEND_API_KEY or not EMAIL_FROM:
-        print(f'[OTP DEBUG] OTP generated for [REDACTED EMAIL]')
+    """Send OTP via Brevo (Sendinblue) API."""
+    BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
+    sender_email = "bablusingh345345@gmail.com" # Default sender email. Brevo usually uses the account email.
+    
+    if not BREVO_API_KEY:
+        print("[OTP DEBUG] Missing BREVO_API_KEY in environment!")
         return True
+
     try:
         html_body = f"""
         <div style="font-family: Arial, sans-serif; padding: 20px;">
-            <h2>Zyra Music Password Reset</h2>
-            <p>Your password reset OTP is:</p>
+            <h2>Zyra Music OTP Verification</h2>
+            <p>Your one-time password is:</p>
             <h1 style="color: #00ffcc; background: #050515; padding: 10px; display: inline-block; border-radius: 5px;">{otp}</h1>
             <p>This code expires in 10 minutes.</p>
             <p>If you did not request this, please ignore this email.</p>
         </div>
         """
         payload = {
-            "from": f"Zyra Music <{EMAIL_FROM}>",
-            "to": [to_email],
-            "subject": "Zyra Music — Password Reset OTP",
-            "html": html_body
+            "sender": {"name": "Zyra Music", "email": sender_email},
+            "to": [{"email": to_email}],
+            "subject": "Zyra Music - OTP Verification Code",
+            "htmlContent": html_body
         }
         headers = {
-            "Authorization": f"Bearer {RESEND_API_KEY}",
-            "Content-Type": "application/json"
+            "api-key": BREVO_API_KEY,
+            "accept": "application/json",
+            "content-type": "application/json"
         }
         import requests
-        r = requests.post('https://api.resend.com/emails', json=payload, headers=headers, timeout=10)
+        r = requests.post('https://api.brevo.com/v3/smtp/email', json=payload, headers=headers, timeout=10)
         r.raise_for_status()
+        print(f'[BREVO] OTP successfully sent to {to_email}')
         return True
     except Exception as e:
-        print(f'Resend email error: {e}')
+        print(f'[BREVO ERROR] Failed to send OTP to {to_email}: {e}')
+        if hasattr(e, 'response') and e.response is not None:
+            print(f'[BREVO RESPONSE] {e.response.text}')
         return False
 
 @app.route('/api/auth/test-resend', methods=['GET'])
