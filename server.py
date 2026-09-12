@@ -972,23 +972,28 @@ def test_smtp():
 
 @app.route('/api/auth/forgot-password', methods=['POST'])
 def forgot_password():
-    data  = request.get_json() or {}
-    email = data.get('email', '').strip().lower()
-    if not email:
-        return jsonify({'success': False, 'error': 'Email required'})
-    user = db_get_user_by_email(email)
-    # Immediately tell the user if the email is not registered
-    if not user:
-        return jsonify({'success': False, 'error': 'This email is not registered. Please sign up first.'})
-    otp = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
-    _otp_store[email] = {
-        'otp': otp, 'user_id': user['id'],
-        'expires_at': time.time() + OTP_EXPIRY_SECONDS, 'verified': False,
-    }
-    # Send email in background so the API returns instantly (prevents timeout)
-    import threading
-    threading.Thread(target=send_otp_email, args=(email, otp), daemon=True).start()
-    return jsonify({'success': True, 'message': 'OTP sent to your email. Please check your inbox.'})
+    try:
+        data  = request.get_json() or {}
+        email = data.get('email', '').strip().lower()
+        if not email:
+            return jsonify({'success': False, 'error': 'Email required'})
+        user = db_get_user_by_email(email)
+        # Immediately tell the user if the email is not registered
+        if not user:
+            return jsonify({'success': False, 'error': 'This email is not registered. Please sign up first.'})
+        otp = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+        _otp_store[email] = {
+            'otp': otp, 'user_id': user.get('id', ''),
+            'expires_at': time.time() + OTP_EXPIRY_SECONDS, 'verified': False,
+        }
+        # Send email in background so the API returns instantly (prevents timeout)
+        import threading
+        threading.Thread(target=send_otp_email, args=(email, otp), daemon=True).start()
+        return jsonify({'success': True, 'message': 'OTP sent to your email. Please check your inbox.'})
+    except Exception as e:
+        import traceback
+        print(f'Forgot password error: {e}\n{traceback.format_exc()}')
+        return jsonify({'success': False, 'error': f'An internal error occurred: {str(e)}'}), 500
 
 
 @app.route('/api/auth/verify-otp', methods=['POST'])
