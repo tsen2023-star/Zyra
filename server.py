@@ -875,7 +875,7 @@ def login():
         error_id = str(uuid.uuid4())
         import traceback
         print(f'Login error [{error_id}]: {e}\n{traceback.format_exc()}')
-        return jsonify({'success': False, 'error': f'An internal error occurred. Ref: {error_id}'}), 500
+        return jsonify({'success': False, 'error': f'An internal error occurred. Ref: {error_id}. Error: {str(e)}'}), 500
 
 
 # ─── Forgot Password / OTP ────────────────────────────────────────────────────
