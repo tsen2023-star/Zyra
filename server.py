@@ -898,7 +898,7 @@ def send_otp_email(to_email: str, otp: str) -> bool:
     BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
     # The email address that the OTP email will be sent FROM.
     # Brevo requires this to be an email you have verified in your Brevo account!
-    sender_email = os.environ.get("EMAIL_FROM", "bablusingh345345@gmail.com")
+    sender_email = os.environ.get("EMAIL_FROM", "noreply@zyramusic.com")
     
     if not BREVO_API_KEY:
         print("[OTP DEBUG] Missing BREVO_API_KEY in environment!")
