@@ -336,10 +336,10 @@ def get_album_details(album_id):
 
 # ─── Invidious instances (YouTube proxy — used for yt_ songs) ────────────────
 INVIDIOUS_INSTANCES = [
-    'https://invidious.nerdvpn.de',
-    'https://invidious.jing.rocks',
+    'https://iv.melmac.space',
+    'https://invidious.lunar.icu',
+    'https://invidious.weblibre.org',
     'https://yt.drgnz.club',
-    'https://invidious.fdn.fr',
 ]
 _invidious_itag_cache: dict = {}  # video_id → {instance, itag, ts}
 
