@@ -315,7 +315,8 @@ def get_album_details(album_id):
             image = upgrade_image_url(s.get('image', ''))
             
             # Fetch direct decrypted URL if possible
-            audio_url = ''
+            enc = s.get('encrypted_media_url', '') or s.get('more_info', {}).get('encrypted_media_url', '')
+            audio_url = decrypt_jiosaavn_url(enc) if enc else ''
             
             songs.append({
                 'id': s_id,
@@ -1381,12 +1382,18 @@ def get_playlist_details_jiosaavn(playlist_id):
             
         for s in raw_songs:
             img = s.get('image', '').replace('150x150', '500x500').replace('50x50', '500x500')
+            enc = s.get('encrypted_media_url', '') or s.get('more_info', {}).get('encrypted_media_url', '')
+            audio_url = decrypt_jiosaavn_url(enc) if enc else ''
+            dl_list = [{'quality': '320kbps', 'url': audio_url}] if audio_url else []
             songs.append({
                 'id': s.get('id'),
                 'name': s.get('title') or s.get('song') or '',
+                'title': s.get('title') or s.get('song') or '',
+                'artist': s.get('primary_artists') or s.get('singers') or '',
                 'artists': {'primary': [{'name': s.get('primary_artists') or s.get('singers') or ''}]},
                 'image': [{'quality': '500x500', 'url': img}],
-                'downloadUrl': [],
+                'downloadUrl': dl_list,
+                'url': audio_url,
                 'duration': s.get('duration') or 0
             })
         return jsonify({'success': True, 'data': {'songs': songs}})
@@ -1711,7 +1718,7 @@ def artist_tracks():
                     
                     # Decrypt url
                     url = None
-                    enc = song.get('more_info', {}).get('encrypted_media_url', '')
+                    enc = song.get('encrypted_media_url', '') or song.get('more_info', {}).get('encrypted_media_url', '')
                     if enc:
                         url = decrypt_jiosaavn_url(enc)
                         
